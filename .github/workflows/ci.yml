@@ -5,13 +5,13 @@ on:
 
 jobs:
   test:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - name: Unit tests (macOS, real CryptoKit)
         run: swift test
   watch-build:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - name: Install XcodeGen
