@@ -1,0 +1,7 @@
+.build/
+.swiftpm/
+ref/
+tools/pygen/
+*.xcodeproj
+xcuserdata/
+Package.resolved

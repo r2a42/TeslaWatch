@@ -1,0 +1,30 @@
+# Generate the Xcode project with:  brew install xcodegen && xcodegen
+name: TeslaWatch
+options:
+  bundleIdPrefix: com.example   # change to your own reverse-DNS prefix
+  deploymentTarget:
+    watchOS: "10.0"
+packages:
+  TeslaKit:
+    path: .
+targets:
+  TeslaWatch:
+    type: application
+    platform: watchOS
+    sources:
+      - App/TeslaWatch
+    dependencies:
+      - package: TeslaKit
+    info:
+      path: App/TeslaWatch/Info.plist
+      properties:
+        CFBundleDisplayName: Tesla Key
+        WKApplication: true
+        WKWatchOnly: true   # standalone: no companion iOS app
+        NSBluetoothAlwaysUsageDescription: Tesla Key connects to your car over Bluetooth to lock, unlock and open it.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.teslawatch
+        SWIFT_VERSION: "5.0"
+        CODE_SIGN_STYLE: Automatic
+        # DEVELOPMENT_TEAM: YOURTEAMID
