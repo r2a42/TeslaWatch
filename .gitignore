@@ -5,3 +5,5 @@ tools/pygen/
 *.xcodeproj
 xcuserdata/
 Package.resolved
+build/
+.DS_Store

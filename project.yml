@@ -1,9 +1,10 @@
 # Generate the Xcode project with:  brew install xcodegen && xcodegen
 name: TeslaWatch
 options:
-  bundleIdPrefix: com.example   # change to your own reverse-DNS prefix
+  bundleIdPrefix: com.r2a42   # change to your own reverse-DNS prefix
   deploymentTarget:
     watchOS: "10.0"
+    iOS: "17.0"
 packages:
   TeslaKit:
     path: .
@@ -18,13 +19,42 @@ targets:
     info:
       path: App/TeslaWatch/Info.plist
       properties:
-        CFBundleDisplayName: Tesla Key
+        CFBundleDisplayName: Watch Key Test
         WKApplication: true
-        WKWatchOnly: true   # standalone: no companion iOS app
-        NSBluetoothAlwaysUsageDescription: Tesla Key connects to your car over Bluetooth to lock, unlock and open it.
+        ITSAppUsesNonExemptEncryption: false   # standard algorithms via Apple's CryptoKit only
+        WKWatchOnly: true   # no companion code; the iOS host app only carries it
+        NSBluetoothAlwaysUsageDescription: Watch Key Test uses Bluetooth to connect to your vehicle so you can lock, unlock and open it from your watch.
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.teslawatch
+        PRODUCT_BUNDLE_IDENTIFIER: com.r2a42.teslakey.watchkitapp
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CURRENT_PROJECT_VERSION: "2"
+        MARKETING_VERSION: "1.0"
         SWIFT_VERSION: "5.0"
         CODE_SIGN_STYLE: Automatic
-        # DEVELOPMENT_TEAM: YOURTEAMID
+        DEVELOPMENT_TEAM: D3B47Q3BHN
+  TeslaHost:
+    type: application
+    platform: iOS
+    sources:
+      - App/TeslaHost
+    dependencies:
+      - target: TeslaWatch
+    info:
+      path: App/TeslaHost/Info.plist
+      properties:
+        CFBundleDisplayName: Watch Key Test
+        UILaunchScreen: {}
+        LSApplicationLaunchProhibited: true   # watch-only container
+        ITSWatchOnlyContainer: true
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.r2a42.teslakey
+        SWIFT_VERSION: "5.0"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: D3B47Q3BHN
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CURRENT_PROJECT_VERSION: "2"
+        MARKETING_VERSION: "1.0"
