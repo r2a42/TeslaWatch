@@ -55,6 +55,9 @@ struct PairingView: View {
                     if model.busy { ProgressView() } else { Text("Pair") }
                 }
                 .disabled(model.busy)
+                if model.busy {
+                    Button("Cancel", role: .cancel) { model.cancelPairing() }
+                }
                 if let message = model.message {
                     Text(message).font(.footnote)
                 }
@@ -81,7 +84,7 @@ struct ControlsView: View {
                 }
                 HStack {
                     action("Frunk", "car.front.waves.up.fill", .gray, .openFrunk)
-                    action("Trunk", "car.rear.fill", .gray, .openTrunk)
+                    action(model.trunkOpen == true ? "Close trunk" : "Trunk", "car.rear.fill", .gray, .openTrunk)
                 }
                 statusLine
                 if let message = model.message {
@@ -94,6 +97,7 @@ struct ControlsView: View {
                 NavigationLink("Settings") { SettingsView(model: model) }
             }
         }
+        .task { await model.refreshStatus(quiet: true) }
         .alert("Open the frunk?", isPresented: $confirmingFrunk) {
             Button("Open") { Task { await model.perform(.openFrunk) } }
             Button("Open, don't ask again") {
@@ -113,7 +117,7 @@ struct ControlsView: View {
             } else if let locked = model.lockState {
                 Image(systemName: locked ? "lock.fill" : "lock.open.fill")
                     .contentTransition(.symbolEffect(.replace))
-                Text(locked ? "Locked" : "Unlocked")
+                Text(statusText(locked: locked))
             } else {
                 Text("Tap to refresh").foregroundStyle(.secondary)
             }
@@ -121,6 +125,13 @@ struct ControlsView: View {
         .font(.footnote)
         .animation(.default, value: model.lockState)
         .onTapGesture { Task { await model.refreshStatus() } }
+    }
+
+    private func statusText(locked: Bool) -> String {
+        var parts = [locked ? "Locked" : "Unlocked"]
+        if model.frunkOpen == true { parts.append("frunk open") }
+        if model.trunkOpen == true { parts.append("trunk open") }
+        return parts.joined(separator: ", ")
     }
 
     private func trigger(_ action: VehicleAction) {

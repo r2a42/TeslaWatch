@@ -17,6 +17,8 @@ final class CarModel: ObservableObject {
     @Published private(set) var busy = false
     @Published private(set) var message: String?
     @Published private(set) var lockState: Bool?
+    @Published private(set) var frunkOpen: Bool?
+    @Published private(set) var trunkOpen: Bool?
     /// The command currently in flight, so only that button shows a spinner.
     @Published private(set) var activeAction: VehicleAction?
     /// Result of the last command, shown briefly on its button.
@@ -64,6 +66,12 @@ final class CarModel: ObservableObject {
         refreshStep()
     }
 
+    /// Ends a pairing attempt that is stuck waiting for the car.
+    func cancelPairing() {
+        DebugLog.shared.add("App: pairing cancel tapped")
+        vehicle?.cancel()
+    }
+
     func pair() async {
         await run("pair", success: false) {
             let v = try self.makeVehicle()
@@ -90,18 +98,37 @@ final class CarModel: ObservableObject {
             }
         }
         activeAction = nil
-        let result = ActionFeedback(action: action, succeeded: message == nil)
+        let succeeded = message == nil
+        let result = ActionFeedback(action: action, succeeded: succeeded)
         feedback = result
         Task {
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             if feedback == result { feedback = nil }
         }
+        if succeeded {
+            // Trunk and frunk take a few seconds to move; read the state once they have settled.
+            let settle: UInt64 = (action == .openTrunk || action == .openFrunk) ? 4_000_000_000 : 500_000_000
+            try? await Task.sleep(nanoseconds: settle)
+            await refreshStatus(quiet: true)
+        }
     }
 
-    func refreshStatus() async {
-        await run("status", success: false) {
-            let status = try await self.makeVehicle().status()
-            self.lockState = status.isLocked
+    func refreshStatus(quiet: Bool = false) async {
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            let status = try await makeVehicle().status()
+            lockState = status.isLocked
+            frunkOpen = status.frunkOpen
+            trunkOpen = status.trunkOpen
+            DebugLog.shared.add("App: status ok locked=\(String(describing: status.isLocked)) frunkOpen=\(status.frunkOpen) trunkOpen=\(status.trunkOpen) doorOpen=\(status.anyDoorOpen)")
+        } catch {
+            DebugLog.shared.add("App: status failed (quiet: \(quiet)): \(error.localizedDescription) [\(error)]")
+            if !quiet {
+                message = error.localizedDescription
+                Haptics.failure()
+            }
         }
     }
 
@@ -111,6 +138,8 @@ final class CarModel: ObservableObject {
         enrolled = false
         vehicle = nil
         lockState = nil
+        frunkOpen = nil
+        trunkOpen = nil
         message = nil
         refreshStep()
     }

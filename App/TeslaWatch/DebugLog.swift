@@ -26,6 +26,12 @@ final class DebugLog: ObservableObject {
         TeslaLog.sink = { line in
             Task { @MainActor in DebugLog.shared.add(line) }
         }
+        let info = Bundle.main.infoDictionary
+        let version = "\(info?["CFBundleShortVersionString"] ?? "?") (\(info?["CFBundleVersion"] ?? "?"))"
+        var sys = utsname()
+        uname(&sys)
+        let machine = withUnsafeBytes(of: &sys.machine) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+        add("=== Launch: \(Bundle.main.bundleIdentifier ?? "?") v\(version), \(machine), \(ProcessInfo.processInfo.operatingSystemVersionString) ===")
     }
 
     func add(_ line: String) {

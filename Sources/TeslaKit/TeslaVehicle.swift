@@ -12,6 +12,9 @@ public enum VehicleAction: Equatable {
 /// Everything here runs on the watch; no phone and no network are involved.
 public final class TeslaVehicle {
     public let vin: String
+    private let activeLock = NSLock()
+    private var activeLink: VehicleLink?
+    private var cancelRequested = false
     private let key: ClientKey
 
     /// Hard cap on one connect + handshake + command round trip.
@@ -70,11 +73,15 @@ public final class TeslaVehicle {
     public func enroll(role: EnrollmentRole = .driver, timeout: TimeInterval = 90,
                        onAwaitingApproval: @escaping @Sendable () -> Void = {}) async throws {
         try await withLink(deadline: timeout + 15) { link in
+            let started = Date()
+            func elapsed() -> String { String(format: "+%.1fs", Date().timeIntervalSince(started)) }
+            TeslaLog.log("Enroll: start (role \(role), timeout \(Int(timeout))s)")
             do {
                 try await link.handshake()
+                TeslaLog.log("Enroll: already enrolled, nothing to do")
                 return // already enrolled
             } catch TeslaError.keyNotEnrolled {
-                // expected; continue
+                TeslaLog.log("Enroll: key not on the car yet (expected), sending add-key request")
             }
 
             let request = UnsignedMessage.addKeyRequest(
@@ -82,27 +89,34 @@ public final class TeslaVehicle {
                 role: role == .owner ? .owner : .driver,
                 formFactor: .iosDevice)
             try await link.transport.send(request)
+            TeslaLog.log("Enroll: add-key request sent (\(request.count)B) \(elapsed()); waiting for card tap and car confirmation")
             onAwaitingApproval()
 
             let deadline = Date().addingTimeInterval(timeout)
+            var poll = 0
             while Date() < deadline {
                 try await Task.sleep(nanoseconds: 2_000_000_000)
+                poll += 1
+                TeslaLog.log("Enroll: poll #\(poll) \(elapsed())")
                 do {
                     try await link.handshake()
+                    TeslaLog.log("Enroll: key accepted after \(poll) polls \(elapsed())")
                     return
                 } catch TeslaError.keyNotEnrolled {
+                    TeslaLog.log("Enroll: poll #\(poll): not enrolled yet")
                     continue
                 } catch TeslaError.timeout {
-                    continue // car is busy waiting for the card tap
+                    TeslaLog.log("Enroll: poll #\(poll): no reply (car busy waiting for the card tap?)")
+                    continue
                 } catch TeslaError.vehicleFault(let code) where code == 1 || code == 2 {
-                    continue // BUSY / TIMEOUT
+                    TeslaLog.log("Enroll: poll #\(poll): car busy/timeout fault \(code)")
+                    continue
                 } catch TeslaError.protocolError("session info authentication failed") {
-                    // Seen once right after the card tap: the car's reply failed authentication but the
-                    // key was already added, and the next handshake succeeded.
-                    TeslaLog.log("Vehicle: enroll poll got unauthenticated session info; retrying")
+                    TeslaLog.log("Enroll: poll #\(poll): unauthenticated session info; retrying")
                     continue
                 }
             }
+            TeslaLog.log("Enroll: gave up after \(poll) polls \(elapsed())")
             throw TeslaError.enrollmentTimedOut
         }
     }
@@ -114,8 +128,22 @@ public final class TeslaVehicle {
 
     // MARK: Plumbing
 
+    /// Drops the current connection so a stuck operation, such as waiting for pairing approval, ends now.
+    public func cancel() {
+        activeLock.lock()
+        cancelRequested = true
+        let link = activeLink
+        activeLock.unlock()
+        TeslaLog.log("Vehicle: cancel requested (link active: \(link != nil))")
+        link?.transport.disconnect()
+    }
+
     private func withLink<T>(deadline: TimeInterval, _ body: (VehicleLink) async throws -> T) async throws -> T {
         let link = VehicleLink(vin: vin, key: key)
+        activeLock.lock()
+        cancelRequested = false
+        activeLink = link
+        activeLock.unlock()
         let watchdog = Task {
             try? await Task.sleep(nanoseconds: UInt64(deadline * 1_000_000_000))
             link.transport.disconnect()
@@ -123,6 +151,9 @@ public final class TeslaVehicle {
         defer {
             watchdog.cancel()
             link.transport.disconnect()
+            activeLock.lock()
+            activeLink = nil
+            activeLock.unlock()
         }
         TeslaLog.log("Vehicle: opening link")
         do {
@@ -131,7 +162,14 @@ public final class TeslaVehicle {
             TeslaLog.log("Vehicle: done")
             return result
         } catch {
-            TeslaLog.log("Vehicle: failed: \(error.localizedDescription)")
+            activeLock.lock()
+            let wasCancelled = cancelRequested
+            activeLock.unlock()
+            if wasCancelled {
+                TeslaLog.log("Vehicle: cancelled (underlying: \(error.localizedDescription))")
+                throw TeslaError.cancelled
+            }
+            TeslaLog.log("Vehicle: failed: \(error.localizedDescription) [\(error)]")
             throw error
         }
     }
@@ -173,18 +211,28 @@ final class VehicleLink {
     }
 
     /// Next reply addressed to us that satisfies `accept`. Undecodable or unrelated frames are skipped.
-    private func nextReply(timeout: TimeInterval, accept: (RoutableMessage) -> Bool = { _ in true }) async throws -> RoutableMessage {
+    private func nextReply(timeout: TimeInterval, requestUUID: Data? = nil,
+                           accept: (RoutableMessage) -> Bool = { _ in true }) async throws -> RoutableMessage {
         let deadline = Date().addingTimeInterval(timeout)
         while true {
             let remaining = deadline.timeIntervalSinceNow
             guard remaining > 0 else { throw TeslaError.timeout }
             let raw = try await transport.receive(timeout: remaining)
             guard let message = try? RoutableMessage(serialized: raw) else {
-                TeslaLog.log("Vehicle: skipped undecodable frame (\(raw.count) bytes)")
+                TeslaLog.log("Vehicle: rx \(raw.count)B undecodable: \(raw.hexPreview())")
                 continue
             }
-            guard message.to?.routingAddress == routingAddress, accept(message) else {
-                TeslaLog.log("Vehicle: skipped unrelated reply (\(raw.count) bytes)")
+            TeslaLog.log("Vehicle: rx \(raw.count)B \(message.logSummary) hex=\(raw.hexPreview())")
+            guard message.to?.routingAddress == routingAddress else {
+                TeslaLog.log("Vehicle: skipped (not addressed to this client)")
+                continue
+            }
+            if let requestUUID, !message.requestUUID.isEmpty, message.requestUUID != requestUUID {
+                TeslaLog.log("Vehicle: skipped stale reply (answers \(message.requestUUID.shortHex), waiting for \(requestUUID.shortHex))")
+                continue
+            }
+            guard accept(message) else {
+                TeslaLog.log("Vehicle: skipped (not the awaited reply)")
                 continue
             }
             return message
@@ -194,10 +242,10 @@ final class VehicleLink {
     // MARK: Handshake
 
     func handshake() async throws {
-        TeslaLog.log("Vehicle: handshake")
         let request = newRequest(payload: .sessionInfoRequest(SessionInfoRequest(publicKey: key.publicKey)))
+        TeslaLog.log("Vehicle: handshake, request uuid \(request.uuid.shortHex)")
         try await transport.send(request.serialized())
-        let reply = try await nextReply(timeout: 5) { reply in
+        let reply = try await nextReply(timeout: 5, requestUUID: request.uuid) { reply in
             if case .sessionInfo? = reply.payload { return true }
             return (reply.status?.fault ?? 0) != 0
         }
@@ -247,8 +295,10 @@ final class VehicleLink {
             let body = try session.decrypt(reply, requestHash: requestHash)
             let fromVCSEC: FromVCSECMessage
             do { fromVCSEC = try FromVCSECMessage(serialized: body) } catch {
+                TeslaLog.log("Vehicle: undecodable command reply (\(body.count)B)")
                 throw TeslaError.protocolError("unreadable reply")
             }
+            TeslaLog.log("Vehicle: command reply: \(fromVCSEC.logSummary)")
             try Self.checkForError(fromVCSEC)
             // VCSEC sends up to three replies; an empty one (no command status) is the final success.
             if fromVCSEC.commandStatus == nil { return }
@@ -280,6 +330,7 @@ final class VehicleLink {
             let reply = try await nextReply(timeout: 5)
             if let fault = reply.status?.fault, fault != 0 { throw TeslaError.vehicleFault(fault) }
             guard let fromVCSEC = try? FromVCSECMessage(serialized: reply.messageBytes) else { continue }
+            TeslaLog.log("Vehicle: status reply: \(fromVCSEC.logSummary) hex=\(reply.messageBytes.hexPreview())")
             try Self.checkForError(fromVCSEC)
             if let status = fromVCSEC.vehicleStatus { return status }
         }

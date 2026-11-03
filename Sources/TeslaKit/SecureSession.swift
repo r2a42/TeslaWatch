@@ -58,10 +58,12 @@ final class SecureSession {
             throw fault == 3 ? TeslaError.keyNotEnrolled : TeslaError.vehicleFault(fault)
         }
         guard case .sessionInfo(let encodedInfo)? = response.payload else {
+            TeslaLog.log("Session: reply had no session info: \(response.logSummary)")
             throw TeslaError.protocolError("handshake reply had no session info")
         }
         let info: SessionInfo
         do { info = try SessionInfo(serialized: encodedInfo) } catch { throw TeslaError.protocolError("bad session info") }
+        TeslaLog.log("Session: info status=\(info.status) epoch=\(info.epoch.count)B pubkey=\(info.publicKey.count)B")
         guard info.status == .ok else { throw TeslaError.keyNotEnrolled }
         guard info.publicKey.count == 65, info.publicKey.first == 0x04, info.epoch.count == 16 else {
             throw TeslaError.protocolError("malformed session info")
@@ -76,7 +78,10 @@ final class SecureSession {
 
         guard let tag = response.signatureData?.sessionInfoTag,
               try isValidSessionInfoTag(key: key, vin: vinData, challenge: challenge, encodedInfo: encodedInfo, tag: tag)
-        else { throw TeslaError.protocolError("session info authentication failed") }
+        else {
+            TeslaLog.log("Session: tag check failed. reply: \(response.logSummary); tag=\(response.signatureData?.sessionInfoTag?.hexPreview() ?? "none"); challenge=\(challenge.shortHex); info=\(encodedInfo.hexPreview())")
+            throw TeslaError.protocolError("session info authentication failed")
+        }
 
         return SecureSession(domain: domain, vin: vinData, key: key, clientPublicKey: clientKey.publicKey,
                              info: info, receivedAt: receivedAt)

@@ -15,6 +15,7 @@ public enum TeslaError: Error, Equatable, LocalizedError {
     case vehicleRefused(UInt64)
     case keychainFull
     case keychain(String)
+    case cancelled
 
     public var errorDescription: String? {
         switch self {
@@ -30,6 +31,7 @@ public enum TeslaError: Error, Equatable, LocalizedError {
         case .vehicleRefused(let code): return "The car refused the command (error \(code))."
         case .keychainFull: return "The car's key list is full."
         case .keychain(let why): return "Key storage error: \(why)"
+        case .cancelled: return "Cancelled."
         }
     }
 
