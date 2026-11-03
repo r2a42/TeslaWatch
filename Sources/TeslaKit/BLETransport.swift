@@ -19,6 +19,7 @@ final class BLETransport: NSObject {
     private var readChar: CBCharacteristic?
     private var targetName = ""
     private var disconnected = false
+    private var seenNames = Set<String>()
 
     private var frames = BLEFrameBuffer()
     private var inbox = [Data]()
@@ -36,9 +37,11 @@ final class BLETransport: NSObject {
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             queue.async {
                 self.targetName = advertisedName
+                TeslaLog.log("BLE: scanning for \(advertisedName)")
                 self.connectContinuation = cont
                 let timer = DispatchWorkItem { [weak self] in
                     guard let self else { return }
+                    TeslaLog.log("BLE: connect timed out (found car: \(self.peripheral != nil))")
                     self.finishConnect(.failure(self.peripheral == nil ? TeslaError.vehicleNotFound : TeslaError.timeout))
                     self.teardown()
                 }
@@ -56,6 +59,7 @@ final class BLETransport: NSObject {
             }
             return (p, c, max(20, p.maximumWriteValueLength(for: .withResponse)))
         }
+        TeslaLog.log("BLE: sending \(message.count) bytes (chunk size \(chunkSize))")
         for chunk in BLEFrameBuffer.chunks(of: BLEFrameBuffer.frame(message), size: chunkSize) {
             try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
                 queue.async {
@@ -117,6 +121,7 @@ final class BLETransport: NSObject {
     private func teardown() {
         guard !disconnected else { return }
         disconnected = true
+        TeslaLog.log("BLE: teardown")
         central?.stopScan()
         if let peripheral { central?.cancelPeripheralConnection(peripheral) }
         let error = TeslaError.protocolError("disconnected")
@@ -141,6 +146,7 @@ final class BLETransport: NSObject {
 
 extension BLETransport: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        TeslaLog.log("BLE: central state \(central.state.rawValue) (5 = poweredOn, 3 = unauthorized)")
         switch central.state {
         case .poweredOn:
             central.scanForPeripherals(withServices: nil, options: nil)
@@ -158,7 +164,11 @@ extension BLETransport: CBCentralManagerDelegate {
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
                         advertisementData: [String: Any], rssi RSSI: NSNumber) {
         let name = (advertisementData[CBAdvertisementDataLocalNameKey] as? String) ?? peripheral.name
+        if let name, name.count == 18, name.hasPrefix("S"), seenNames.insert(name).inserted, seenNames.count <= 10 {
+            TeslaLog.log("BLE: saw vehicle-like name \(name), rssi \(RSSI)")
+        }
         guard name == targetName, self.peripheral == nil else { return }
+        TeslaLog.log("BLE: found target, rssi \(RSSI); connecting")
         central.stopScan()
         self.peripheral = peripheral
         peripheral.delegate = self
@@ -166,15 +176,18 @@ extension BLETransport: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        TeslaLog.log("BLE: connected; discovering services")
         peripheral.discoverServices([TeslaBLE.service])
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        TeslaLog.log("BLE: connection failed: \(error?.localizedDescription ?? "unknown")")
         finishConnect(.failure(TeslaError.protocolError("connection failed")))
         teardown()
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+        TeslaLog.log("BLE: disconnected: \(error?.localizedDescription ?? "no error")")
         teardown()
     }
 }
@@ -183,6 +196,7 @@ extension BLETransport: CBCentralManagerDelegate {
 
 extension BLETransport: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        TeslaLog.log("BLE: services \(peripheral.services?.map { $0.uuid.uuidString } ?? []) error \(error?.localizedDescription ?? "none")")
         guard error == nil, let service = peripheral.services?.first(where: { $0.uuid == TeslaBLE.service }) else {
             finishConnect(.failure(TeslaError.protocolError("vehicle service not found")))
             teardown()
@@ -192,6 +206,7 @@ extension BLETransport: CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
+        TeslaLog.log("BLE: characteristics \(service.characteristics?.map { $0.uuid.uuidString } ?? []) error \(error?.localizedDescription ?? "none")")
         writeChar = service.characteristics?.first { $0.uuid == TeslaBLE.writeCharacteristic }
         readChar = service.characteristics?.first { $0.uuid == TeslaBLE.readCharacteristic }
         guard error == nil, writeChar != nil, let readChar else {
@@ -203,6 +218,7 @@ extension BLETransport: CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
+        TeslaLog.log("BLE: notify state \(characteristic.isNotifying) error \(error?.localizedDescription ?? "none")")
         if error == nil, characteristic.isNotifying {
             finishConnect(.success(()))
         } else {
@@ -212,8 +228,14 @@ extension BLETransport: CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
-        guard error == nil, let chunk = characteristic.value else { return }
-        for message in frames.append(chunk) { deliver(message) }
+        guard error == nil, let chunk = characteristic.value else {
+            TeslaLog.log("BLE: read error \(error?.localizedDescription ?? "no value")")
+            return
+        }
+        for message in frames.append(chunk) {
+            TeslaLog.log("BLE: received \(message.count) bytes")
+            deliver(message)
+        }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
@@ -222,6 +244,7 @@ extension BLETransport: CBPeripheralDelegate {
         if error == nil {
             cont.resume()
         } else {
+            TeslaLog.log("BLE: write failed: \(error?.localizedDescription ?? "unknown")")
             cont.resume(throwing: TeslaError.protocolError("write failed"))
         }
     }

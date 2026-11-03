@@ -29,6 +29,8 @@ struct VINEntryView: View {
                     .autocorrectionDisabled()
                 Button("Continue") { model.saveVIN(text) }
                     .disabled(text.count < 17)
+                NavigationLink("Log") { LogView() }
+                    .font(.footnote)
                 if let message = model.message {
                     Text(message).font(.footnote).foregroundStyle(.red)
                 }
@@ -58,6 +60,8 @@ struct PairingView: View {
                 }
                 Button("Change VIN", role: .destructive) { model.reset() }
                     .font(.footnote)
+                NavigationLink("Log") { LogView() }
+                    .font(.footnote)
             }
         }
     }
@@ -65,6 +69,8 @@ struct PairingView: View {
 
 struct ControlsView: View {
     @ObservedObject var model: CarModel
+    @AppStorage("skipFrunkWarning") private var skipFrunkWarning = false
+    @State private var confirmingFrunk = false
 
     var body: some View {
         ScrollView {
@@ -88,6 +94,16 @@ struct ControlsView: View {
                 NavigationLink("Settings") { SettingsView(model: model) }
             }
         }
+        .alert("Open the frunk?", isPresented: $confirmingFrunk) {
+            Button("Open") { Task { await model.perform(.openFrunk) } }
+            Button("Open, don't ask again") {
+                skipFrunkWarning = true
+                Task { await model.perform(.openFrunk) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This app can't close the frunk. You'll need to close it by hand.")
+        }
     }
 
     private var statusLine: some View {
@@ -96,36 +112,63 @@ struct ControlsView: View {
                 ProgressView()
             } else if let locked = model.lockState {
                 Image(systemName: locked ? "lock.fill" : "lock.open.fill")
+                    .contentTransition(.symbolEffect(.replace))
                 Text(locked ? "Locked" : "Unlocked")
             } else {
                 Text("Tap to refresh").foregroundStyle(.secondary)
             }
         }
         .font(.footnote)
+        .animation(.default, value: model.lockState)
         .onTapGesture { Task { await model.refreshStatus() } }
     }
 
-    private func action(_ title: String, _ symbol: String, _ tint: Color, _ action: VehicleAction) -> some View {
-        Button {
+    private func trigger(_ action: VehicleAction) {
+        if action == .openFrunk && !skipFrunkWarning {
+            confirmingFrunk = true
+        } else {
             Task { await model.perform(action) }
+        }
+    }
+
+    private func action(_ title: String, _ symbol: String, _ tint: Color, _ action: VehicleAction) -> some View {
+        let result = model.feedback?.action == action ? model.feedback : nil
+        return Button {
+            trigger(action)
         } label: {
             VStack {
-                Image(systemName: symbol)
+                ZStack {
+                    if model.activeAction == action {
+                        ProgressView()
+                    } else if let result {
+                        Image(systemName: result.succeeded ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            .foregroundStyle(result.succeeded ? .green : .red)
+                            .symbolEffect(.bounce, value: result.id)
+                    } else {
+                        Image(systemName: symbol)
+                    }
+                }
+                .frame(height: 24)
                 Text(title).font(.caption2)
             }
             .frame(maxWidth: .infinity, minHeight: 44)
         }
         .tint(tint)
         .disabled(model.busy)
+        .animation(.easeInOut(duration: 0.2), value: model.activeAction)
+        .animation(.easeInOut(duration: 0.2), value: model.feedback)
     }
 }
 
 struct SettingsView: View {
     @ObservedObject var model: CarModel
+    @AppStorage("skipFrunkWarning") private var skipFrunkWarning = false
 
     var body: some View {
         List {
             Text("VIN \(model.vin)").font(.footnote)
+            NavigationLink("Log") { LogView() }
+            Toggle("Warn before frunk", isOn: Binding(get: { !skipFrunkWarning }, set: { skipFrunkWarning = !$0 }))
             Button("Forget car and key", role: .destructive) { model.reset() }
             Text("To fully revoke this watch, also delete its key in the car under Controls › Locks.")
                 .font(.caption2)

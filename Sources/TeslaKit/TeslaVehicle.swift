@@ -96,6 +96,11 @@ public final class TeslaVehicle {
                     continue // car is busy waiting for the card tap
                 } catch TeslaError.vehicleFault(let code) where code == 1 || code == 2 {
                     continue // BUSY / TIMEOUT
+                } catch TeslaError.protocolError("session info authentication failed") {
+                    // Seen once right after the card tap: the car's reply failed authentication but the
+                    // key was already added, and the next handshake succeeded.
+                    TeslaLog.log("Vehicle: enroll poll got unauthenticated session info; retrying")
+                    continue
                 }
             }
             throw TeslaError.enrollmentTimedOut
@@ -119,8 +124,16 @@ public final class TeslaVehicle {
             watchdog.cancel()
             link.transport.disconnect()
         }
-        try await link.connect()
-        return try await body(link)
+        TeslaLog.log("Vehicle: opening link")
+        do {
+            try await link.connect()
+            let result = try await body(link)
+            TeslaLog.log("Vehicle: done")
+            return result
+        } catch {
+            TeslaLog.log("Vehicle: failed: \(error.localizedDescription)")
+            throw error
+        }
     }
 }
 
@@ -166,10 +179,14 @@ final class VehicleLink {
             let remaining = deadline.timeIntervalSinceNow
             guard remaining > 0 else { throw TeslaError.timeout }
             let raw = try await transport.receive(timeout: remaining)
-            guard let message = try? RoutableMessage(serialized: raw),
-                  message.to?.routingAddress == routingAddress,
-                  accept(message)
-            else { continue }
+            guard let message = try? RoutableMessage(serialized: raw) else {
+                TeslaLog.log("Vehicle: skipped undecodable frame (\(raw.count) bytes)")
+                continue
+            }
+            guard message.to?.routingAddress == routingAddress, accept(message) else {
+                TeslaLog.log("Vehicle: skipped unrelated reply (\(raw.count) bytes)")
+                continue
+            }
             return message
         }
     }
@@ -177,6 +194,7 @@ final class VehicleLink {
     // MARK: Handshake
 
     func handshake() async throws {
+        TeslaLog.log("Vehicle: handshake")
         let request = newRequest(payload: .sessionInfoRequest(SessionInfoRequest(publicKey: key.publicKey)))
         try await transport.send(request.serialized())
         let reply = try await nextReply(timeout: 5) { reply in
@@ -185,6 +203,7 @@ final class VehicleLink {
         }
         session = try SecureSession.establish(
             clientKey: key, vin: vin, domain: .vehicleSecurity, challenge: request.uuid, response: reply)
+        TeslaLog.log("Vehicle: session established")
     }
 
     // MARK: Signed commands

@@ -1,6 +1,10 @@
 import SwiftUI
 import TeslaKit
+#if os(watchOS)
 import WatchKit
+#else
+import UIKit
+#endif
 
 @MainActor
 final class CarModel: ObservableObject {
@@ -13,10 +17,23 @@ final class CarModel: ObservableObject {
     @Published private(set) var busy = false
     @Published private(set) var message: String?
     @Published private(set) var lockState: Bool?
+    /// The command currently in flight, so only that button shows a spinner.
+    @Published private(set) var activeAction: VehicleAction?
+    /// Result of the last command, shown briefly on its button.
+    @Published private(set) var feedback: ActionFeedback?
+
+    struct ActionFeedback: Equatable {
+        let id = UUID()
+        let action: VehicleAction
+        let succeeded: Bool
+    }
 
     private var vehicle: TeslaVehicle?
 
-    init() { refreshStep() }
+    init() {
+        _ = DebugLog.shared
+        refreshStep()
+    }
 
     private func refreshStep() {
         if storedVIN.isEmpty {
@@ -48,7 +65,7 @@ final class CarModel: ObservableObject {
     }
 
     func pair() async {
-        await run(success: false) {
+        await run("pair", success: false) {
             let v = try self.makeVehicle()
             try await v.enroll(onAwaitingApproval: {
                 Task { @MainActor in
@@ -62,7 +79,8 @@ final class CarModel: ObservableObject {
     }
 
     func perform(_ action: VehicleAction) async {
-        await run(success: true) {
+        activeAction = action
+        await run("\(action)", success: true) {
             let v = try self.makeVehicle()
             try await v.perform(action)
             switch action {
@@ -71,10 +89,17 @@ final class CarModel: ObservableObject {
             default: break
             }
         }
+        activeAction = nil
+        let result = ActionFeedback(action: action, succeeded: message == nil)
+        feedback = result
+        Task {
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            if feedback == result { feedback = nil }
+        }
     }
 
     func refreshStatus() async {
-        await run(success: false) {
+        await run("status", success: false) {
             let status = try await self.makeVehicle().status()
             self.lockState = status.isLocked
         }
@@ -92,17 +117,38 @@ final class CarModel: ObservableObject {
 
     var vin: String { storedVIN }
 
-    private func run(success haptic: Bool, _ body: @escaping () async throws -> Void) async {
+    private func run(_ name: String, success haptic: Bool, _ body: @escaping () async throws -> Void) async {
         guard !busy else { return }
         busy = true
         message = nil
+        DebugLog.shared.add("App: \(name) started")
         defer { busy = false }
         do {
             try await body()
-            if haptic { WKInterfaceDevice.current().play(.success) }
+            DebugLog.shared.add("App: \(name) ok")
+            if haptic { Haptics.success() }
         } catch {
             message = error.localizedDescription
-            WKInterfaceDevice.current().play(.failure)
+            DebugLog.shared.add("App: \(name) failed: \(error.localizedDescription) [\(error)]")
+            Haptics.failure()
         }
+    }
+}
+
+private enum Haptics {
+    static func success() {
+        #if os(watchOS)
+        WKInterfaceDevice.current().play(.success)
+        #else
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        #endif
+    }
+
+    static func failure() {
+        #if os(watchOS)
+        WKInterfaceDevice.current().play(.failure)
+        #else
+        UINotificationFeedbackGenerator().notificationOccurred(.error)
+        #endif
     }
 }

@@ -95,3 +95,12 @@ install it through TestFlight to see if it reaches the watch.
   into the app and never committed. Don't commit the VIN or any key material.
 - Enrolling a key adds it to the car's key list. Removal is done in the car under Controls > Locks.
 - Don't present untested BLE or pairing behavior as working.
+
+## TODO on the next build
+- Add `ITSAppUsesNonExemptEncryption` to both targets' Info.plist properties in `project.yml` (TeslaWatch and
+  TeslaHost), set to match the answer given in App Store Connect's export compliance questions (standard
+  algorithms via Apple's OS: AES-GCM, P-256 through CryptoKit). This stops the compliance prompt on every build.
+- The France encryption question is likely settled by the same key when the app is exempt. That is unverified:
+  check what App Store Connect asks for France before relying on it.
+- Replace the placeholder app icon (generated key shape) before any public release.
+- Uncommitted: `project.yml`, `App/TeslaHost`, both `Assets.xcassets`, `HANDOFF.md`. `build/` should not be committed.
