@@ -179,6 +179,9 @@ struct ControlsView: View {
                     .padding(.bottom, 24)  // clear of the page dots
             }
         }
+        #if os(iOS)
+        .refreshable { await model.refreshStatus() }
+        #endif
         .disabled(!isCurrent)
         .task(id: isCurrent) { if isCurrent { await model.refreshStatus(quiet: true) } }
         .alert("Open the frunk?", isPresented: $confirmingFrunk) {
@@ -193,21 +196,29 @@ struct ControlsView: View {
         }
     }
 
+    /// Shows the car's state and refreshes it when tapped. A full-size button, because pull-to-refresh
+    /// doesn't work on watchOS.
     private var statusLine: some View {
-        HStack(spacing: 4) {
-            if model.busy {
-                ProgressView()
-            } else if let locked = lockState {
-                Image(systemName: locked ? "lock.fill" : "lock.open.fill")
-                    .contentTransition(.symbolEffect(.replace))
-                Text(statusText(locked: locked))
-            } else {
-                Text("Tap to refresh").foregroundStyle(.secondary)
+        Button {
+            Task { await model.refreshStatus() }
+        } label: {
+            HStack(spacing: 6) {
+                if model.busy {
+                    ProgressView()
+                } else if let locked = lockState {
+                    Image(systemName: locked ? "lock.fill" : "lock.open.fill")
+                        .contentTransition(.symbolEffect(.replace))
+                    Text(statusText(locked: locked))
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                    Text("Refresh")
+                }
             }
+            .font(.body)
+            .frame(maxWidth: .infinity, minHeight: 44)
         }
-        .font(.footnote)
+        .buttonStyle(.bordered)
         .animation(.default, value: lockState)
-        .onTapGesture { Task { await model.refreshStatus() } }
     }
 
     private func statusText(locked: Bool) -> String {
