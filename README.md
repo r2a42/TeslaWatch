@@ -48,8 +48,13 @@ from `vehicle-command/pkg/protocol/protobuf/*.proto`).
 3. The watch generates a P-256 key in its Secure Enclave and sends an add-key request over BLE.
 4. Tap the key card on the center console, then confirm on the car's screen.
 
-The name is local to the app. Tesla's protocol has no field for a key name (the add-key request carries
+The name in the app is local. Tesla's protocol has no field for a key name (the add-key request carries
 only a form factor), so the car lists these keys as "Phone Key".
+
+To name a key on the car: open **Controls > Locks** on the car's screen and send a command from the app.
+The car moves the key that was just used to the top of the list, and an edit button next to it lets you
+rename it (for example "Joe's Apple Watch - Watch Key Test"). The key's page in the app shows when a command
+was last sent through it, to help match it to the car's list.
 
 ## What is and isn't verified
 

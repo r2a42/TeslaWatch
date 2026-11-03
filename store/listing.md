@@ -30,6 +30,8 @@ How setup works
 1. Open the app on the watch and enter your vehicle's VIN.
 2. Sit in the vehicle and tap Pair.
 3. Hold your key card to the centre console and confirm on the vehicle's screen.
+4. Optional: to name the key on the vehicle, open Controls > Locks on its screen, send a command from the
+   watch, then tap the edit button next to the key that moves to the top.
 
 Privacy
 The watch creates its own key inside the Secure Enclave. Nothing is sent to us. No accounts, no tracking, no

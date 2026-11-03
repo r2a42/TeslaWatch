@@ -112,4 +112,6 @@ docs/privacy.md and on `VehicleAction`.
 
 ## Key names on the car
 Tesla's add-key request has no name field (`KeyMetadata` carries only `keyFormFactor`), so the car's Locks
-list shows "Phone Key" for every iOS-device key. Names exist only inside the app.
+list shows "Phone Key" for every iOS-device key. The owner can rename a key on the car: with Controls >
+Locks open, sending a command moves that key to the top, and an edit button beside it lets you name it.
+The app records the last command time per key to help match entries.

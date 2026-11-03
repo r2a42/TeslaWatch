@@ -313,6 +313,17 @@ struct KeyDetailView: View {
                     .onSubmit { model.rename(id, to: name) }
                 if let profile {
                     Text("VIN \(profile.vin)").font(.footnote).foregroundStyle(.secondary)
+                    VStack(spacing: 2) {
+                        Text("Last command sent").font(.footnote).foregroundStyle(.secondary)
+                        if let at = profile.lastCommandAt {
+                            Text(at.formatted(date: .abbreviated, time: .shortened)).font(.body.weight(.semibold))
+                            if let command = profile.lastCommand {
+                                Text(command).font(.footnote).foregroundStyle(.secondary)
+                            }
+                        } else {
+                            Text("None yet").font(.body)
+                        }
+                    }
                     if model.selected?.id != id {
                         BigButton(title: "Use this key") {
                             model.rename(id, to: name)
@@ -328,6 +339,10 @@ struct KeyDetailView: View {
                     }
                     BigButton(title: "Delete", role: .destructive, prominent: false) { confirmingDelete = true }
                         .padding(.top, 16)
+                    Text("To name this key on the car: open Controls > Locks on the car's screen, send a command from this app, then tap the edit button next to the key that moves to the top.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 8)
                 }
             }
         }

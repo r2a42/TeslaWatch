@@ -14,6 +14,10 @@ struct KeyProfile: Codable, Identifiable, Equatable {
     var vin: String
     var enrolled = false
     var slot: String
+    /// When a command last went through this key, and which one. Lets you match it to the car's key list,
+    /// where the car moves the key you just used to the top.
+    var lastCommandAt: Date?
+    var lastCommand: String?
 
     var vinTail: String { String(vin.suffix(6)) }
 }
@@ -174,6 +178,7 @@ final class CarModel: ObservableObject {
     }
 
     func perform(_ action: VehicleAction) async {
+        let id = selected?.id
         activeAction = action
         await run("\(action)", success: true) {
             let v = try self.makeVehicle()
@@ -186,6 +191,11 @@ final class CarModel: ObservableObject {
         }
         activeAction = nil
         let succeeded = message == nil
+        if succeeded, let id, let i = profiles.firstIndex(where: { $0.id == id }) {
+            profiles[i].lastCommandAt = Date()
+            profiles[i].lastCommand = action.label
+            save()
+        }
         let result = ActionFeedback(action: action, succeeded: succeeded)
         feedback = result
         Task {
@@ -233,6 +243,17 @@ final class CarModel: ObservableObject {
             message = error.localizedDescription
             DebugLog.shared.add("App: \(name) failed: \(error.localizedDescription) [\(error)]")
             Haptics.failure()
+        }
+    }
+}
+
+private extension VehicleAction {
+    var label: String {
+        switch self {
+        case .lock: return "Lock"
+        case .unlock: return "Unlock"
+        case .openTrunk: return "Trunk"
+        case .openFrunk: return "Frunk"
         }
     }
 }
