@@ -6,14 +6,26 @@ servers, no developer registration.
 
 Target: 2021 Model Y, Family Setup watch (watchOS 10+).
 
+## Purpose and scope
+
+This app is for **retrieving things from the car**: locking, unlocking, and opening the trunk or frunk,
+for example for a child with a watch and no phone. It is **not** meant for driving. It does not start the
+car, does not use remote drive or keyless driving, and contains no code that could. The only commands are
+lock, unlock, open/close trunk, open frunk, and reading lock and closure state (see `VehicleAction` in
+`Sources/TeslaKit/TeslaVehicle.swift`). Please don't add driving-related commands.
+
 ## Layout
 
 | Path | What |
 | --- | --- |
 | `Sources/TeslaKit` | Protocol, crypto, BLE transport. Public API is `TeslaVehicle`. |
 | `Tests/TeslaKitTests` | Unit tests against golden vectors from Tesla's spec and official protobuf bindings. |
-| `App/TeslaWatch` | SwiftUI watch app (VIN entry → pairing → controls). |
-| `project.yml` | XcodeGen spec for the watch-only app target. |
+| `App/TeslaWatch` | SwiftUI watch app: named keys, pairing, controls, in-app log. |
+| `App/TeslaHost` | Empty iOS container app. The App Store only accepts a watch app embedded in an iOS app. |
+| `App/TeslaPhone` | iPhone test build (separate bundle ID, installed from Xcode) sharing the watch views and `TeslaKit`. |
+| `docs/privacy.md` | Privacy policy (published with GitHub Pages). |
+| `store/` | App Store listing text, review notes and screenshots. |
+| `project.yml` | XcodeGen spec for all app targets. |
 | `tools/reference_vectors.py` | Python reference that generates the golden vectors. |
 
 ## Build
@@ -30,21 +42,27 @@ from `vehicle-command/pkg/protocol/protobuf/*.proto`).
 
 ## Pairing flow
 
-1. Enter the VIN once (it is bound into every message's authentication and derives the BLE name).
+1. Add a key: give it a name and enter the VIN (it is bound into every message's authentication and
+   derives the BLE name). Several keys can be added; each has its own Secure Enclave key.
 2. Sit in the car with an NFC key card. Tap **Pair** on the watch.
 3. The watch generates a P-256 key in its Secure Enclave and sends an add-key request over BLE.
 4. Tap the key card on the center console, then confirm on the car's screen.
 
+The name is local to the app. Tesla's protocol has no field for a key name (the add-key request carries
+only a form factor), so the car lists these keys as "Phone Key".
+
 ## What is and isn't verified
 
-Verified (runs in `swift test` on Linux): wire encoding, session-info HMAC, ECDH key derivation,
-AES-GCM signing byte-for-byte against the official bindings, response decryption, replay
-rejection, BLE framing.
+Verified (runs in `swift test`): wire encoding, session-info HMAC, ECDH key derivation, AES-GCM
+signing byte-for-byte against the official bindings, response decryption, replay rejection, BLE
+framing.
 
-**Not verified; never compiled or run against a real car:** `BLETransport` (CoreBluetooth),
-`TeslaVehicle`/`VehicleLink` (handshake and reply handling over BLE), `SecureEnclaveClientKey`,
-`KeyStore`, and the SwiftUI app. Expect compile fixes and BLE debugging on first run. Likely
-trouble spots: scan behavior on watchOS, write chunk size, VCSEC reply sequencing.
+Verified on a real 2021 Model Y from an iPhone (`TeslaPhone` build): BLE scan and connect, handshake,
+pairing with a key card, lock, unlock, trunk and frunk.
+
+**Not verified:** running on an Apple Watch, the watch's Secure Enclave key, watchOS Bluetooth
+behavior, installing on a Family Setup watch, reading trunk and frunk state from the car (decoded
+from Tesla's format but not yet checked against a real reply), and multi-key pairing.
 
 ## Known limitations
 

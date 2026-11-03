@@ -5,6 +5,11 @@ _Last updated: 2026-10-31_
 Watch Key Test is an Apple Watch app that connects to your vehicle over Bluetooth Low Energy so you can lock,
 unlock and open it from your watch.
 
+## What the app can do
+
+The app can lock and unlock the vehicle and open its trunk and frunk, so items can be retrieved. It cannot
+start or drive the vehicle.
+
 ## What the app collects
 
 **Nothing is sent to us or to any third party.** The app has no accounts, no servers, no analytics, no

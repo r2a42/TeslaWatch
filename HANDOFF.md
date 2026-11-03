@@ -104,3 +104,12 @@ install it through TestFlight to see if it reaches the watch.
   check what App Store Connect asks for France before relying on it.
 - Replace the placeholder app icon (generated key shape) before any public release.
 - Uncommitted: `project.yml`, `App/TeslaHost`, both `Assets.xcassets`, `HANDOFF.md`. `build/` should not be committed.
+
+## Scope (stated by the owner)
+The app is for retrieving things from the car (lock, unlock, trunk, frunk). It must not drive the car: no
+start, remote drive or keyless driving command. This is written in README.md, store/listing.md,
+docs/privacy.md and on `VehicleAction`.
+
+## Key names on the car
+Tesla's add-key request has no name field (`KeyMetadata` carries only `keyFormFactor`), so the car's Locks
+list shows "Phone Key" for every iOS-device key. Names exist only inside the app.

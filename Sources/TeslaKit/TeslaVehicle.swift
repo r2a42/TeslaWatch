@@ -1,6 +1,9 @@
 #if canImport(CoreBluetooth)
 import Foundation
 
+/// The only commands this library can send. It is for retrieving things from the car (locking, unlocking,
+/// opening the trunk or frunk), not for driving. There is deliberately no start, remote drive or keyless
+/// driving command, and none should be added.
 public enum VehicleAction: Equatable {
     case lock
     case unlock

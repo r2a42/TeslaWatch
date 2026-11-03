@@ -14,7 +14,8 @@ A key for your vehicle on your Apple Watch. Made for family-managed watches with
 watch,key,car,vehicle,lock,unlock,trunk,bluetooth,family,kids,remote
 
 **Description:**
-Watch Key Test turns an Apple Watch into a Bluetooth key for a compatible vehicle.
+Watch Key Test turns an Apple Watch into a Bluetooth key for a compatible vehicle, for getting things in and
+out of it. It locks, unlocks and opens the trunk and frunk. It can't start or drive the vehicle.
 
 Built for family watches with no iPhone. If your child wears an Apple Watch set up through Family Setup and
 doesn't have a phone, this app works entirely from the watch. There's no iPhone app to install, no account to
@@ -37,6 +38,7 @@ servers. Your key can be removed from the vehicle at any time on its own screen.
 Good to know
 - The app must be open on the watch to send a command. It is not a hands-free key and doesn't unlock
   automatically as you walk up.
+- For retrieving items only. It has no way to start or drive the vehicle.
 - Requires Bluetooth and a compatible vehicle within range.
 - Independent app. Not made by, or affiliated with, any vehicle manufacturer.
 
@@ -45,7 +47,9 @@ Good to know
 **Copyright:** 2026 Sean McNally
 
 ## Review notes (App Review Information)
-This is a watchOS app for Apple Watches managed through Family Setup (no paired iPhone). The iOS target is
+This is a watchOS app for Apple Watches managed through Family Setup (no paired iPhone). It is for
+retrieving items from a vehicle: lock, unlock, trunk and frunk only. It cannot start or drive the vehicle,
+and the code contains no command that could. The iOS target is
 only a required container and has no functionality.
 
 The app talks to the user's own vehicle over Bluetooth LE using the manufacturer's published vehicle command
