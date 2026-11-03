@@ -53,11 +53,12 @@ struct LogView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 6) {
-                Text(log.text.isEmpty ? "No log yet." : log.text)
-                    .font(.system(size: 10, design: .monospaced))
-                    #if os(iOS)
-                    .textSelection(.enabled)
-                    #endif
+                // Actions first, so they are on screen without scrolling past a long log.
+                HStack(spacing: 6) {
+                    ShareLink(item: log.text) { Label("Share", systemImage: "square.and.arrow.up") }
+                        .disabled(log.text.isEmpty)
+                    Button("Clear", role: .destructive) { log.clear() }
+                }
                 #if os(iOS)
                 Button {
                     UIPasteboard.general.string = log.text
@@ -67,9 +68,11 @@ struct LogView: View {
                 }
                 .disabled(log.text.isEmpty)
                 #endif
-                ShareLink(item: log.text) { Label("Share log", systemImage: "square.and.arrow.up") }
-                    .disabled(log.text.isEmpty)
-                Button("Clear log", role: .destructive) { log.clear() }
+                Text(log.text.isEmpty ? "No log yet." : log.text)
+                    .font(.system(size: 10, design: .monospaced))
+                    #if os(iOS)
+                    .textSelection(.enabled)
+                    #endif
             }
         }
         .navigationTitle("Log")

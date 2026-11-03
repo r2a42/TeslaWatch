@@ -12,7 +12,7 @@ private struct BigButton: View {
         Button(role: role, action: action) {
             Text(title)
                 .font(.title3.weight(.semibold))
-                .frame(maxWidth: .infinity, minHeight: 48)
+                .frame(maxWidth: .infinity, minHeight: 44)
         }
         .buttonStyle(.bordered)
         .modifier(ProminentIf(prominent))
@@ -26,6 +26,39 @@ private struct ProminentIf: ViewModifier {
 
     func body(content: Content) -> some View {
         if on { content.buttonStyle(.borderedProminent).tint(.blue) } else { content }
+    }
+}
+
+/// Top-corner button that opens Settings (keys, log, options). Replaces a text link that cost a row of height.
+private struct SettingsGear: ToolbarContent {
+    let model: CarModel
+
+    var body: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            NavigationLink { SettingsView(model: model) } label: { Image(systemName: "gearshape.fill") }
+        }
+    }
+}
+
+/// Key name with one dot per key beside it, so the page dots don't cover the bottom of the screen.
+private struct KeyHeader: View {
+    @ObservedObject var model: CarModel
+    let title: String
+    let profile: KeyProfile
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.footnote.weight(.semibold))
+                .lineLimit(1)
+            HStack(spacing: 3) {
+                ForEach(model.profiles) { other in
+                    Circle()
+                        .fill(other.id == profile.id ? Color.primary : Color.secondary.opacity(0.45))
+                        .frame(width: 6, height: 6)
+                }
+            }
+        }
     }
 }
 
@@ -63,7 +96,8 @@ struct KeyPager: View {
                 .tag(profile.id)
             }
         }
-        .tabViewStyle(.page)
+        .tabViewStyle(.page(indexDisplayMode: .never))
+        .toolbar { SettingsGear(model: model) }
     }
 }
 
@@ -76,25 +110,21 @@ struct AddKeyView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 14) {
-                Text(isFirstKey ? "Add your car" : "Add a key")
-                    .font(.title3.bold())
+            VStack(spacing: 6) {
                 TextField("Name", text: $name)
-                TextField("17-character VIN", text: $vin)
+                TextField("VIN", text: $vin)
                     .textInputAutocapitalization(.characters)
                     .autocorrectionDisabled()
                 if let message = model.message {
-                    Text(message).font(.body).foregroundStyle(.red)
+                    Text(message).font(.footnote).foregroundStyle(.red)
                 }
                 BigButton(title: "Add key") {
                     if model.addKey(name: name, vin: vin), !isFirstKey { dismiss() }
                 }
                 .disabled(vin.count < 17)
-                NavigationLink("Log") { LogView() }
-                    .font(.body)
-                    .padding(.top, 20)
             }
         }
+        .toolbar { if isFirstKey { SettingsGear(model: model) } }
     }
 }
 
@@ -104,39 +134,33 @@ struct PairingView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 14) {
-                Text("Pair \(profile.name)")
-                    .font(.title3.bold())
-                    .multilineTextAlignment(.center)
+            VStack(spacing: 8) {
                 if model.busy {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                        Text("Waiting for the car").font(.body)
+                    // One block of text and the Cancel button, so Cancel is always on screen.
+                    if let message = model.message {
+                        Text(message)
+                            .font(.body)
+                            .multilineTextAlignment(.center)
+                    } else {
+                        VStack(spacing: 4) {
+                            ProgressView()
+                            Text("Waiting for the car").font(.body)
+                        }
                     }
-                } else {
-                    Text("Sit in the car with your key card. Tap Pair, then touch the card to the center console.")
-                        .font(.body)
-                        .multilineTextAlignment(.center)
-                }
-                if !model.busy {
-                    BigButton(title: "Pair") { Task { await model.pair() } }
-                }
-                if let message = model.message {
-                    Text(message)
-                        .font(.body)
-                        .multilineTextAlignment(.center)
-                }
-                if model.busy {
                     BigButton(title: "Cancel", role: .destructive, prominent: false) { model.cancelPairing() }
                 } else {
-                    // Kept apart from Pair, and hidden while pairing, so they can't be hit by mistake.
-                    VStack(spacing: 10) {
-                        NavigationLink("Keys") { KeysView(model: model) }
-                        NavigationLink("Log") { LogView() }
+                    if model.profiles.count > 1 {
+                        KeyHeader(model: model, title: "Pair \(profile.name)", profile: profile)
                     }
-                    .font(.body)
-                    .padding(.top, 24)
-                    .padding(.bottom, 24)
+                    Text("Tap Pair, then tap your key card on the console.")
+                        .font(.body)
+                        .multilineTextAlignment(.center)
+                    BigButton(title: "Pair") { Task { await model.pair() } }
+                    if let message = model.message {
+                        Text(message)
+                            .font(.footnote)
+                            .multilineTextAlignment(.center)
+                    }
                 }
             }
         }
@@ -161,10 +185,11 @@ struct ControlsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 8) {
-                Text(profile.name)
-                    .font(.footnote.weight(.semibold))
-                    .lineLimit(1)
+            VStack(spacing: 6) {
+                // The page dots already show there are several keys; the name matters only then.
+                if model.profiles.count > 1 {
+                    KeyHeader(model: model, title: profile.name, profile: profile)
+                }
                 if isCurrent && model.carReachable == false {
                     // Out of range: only the message and Reconnect, no command buttons.
                     outOfRange
@@ -174,18 +199,11 @@ struct ControlsView: View {
                         action("Lock", "lock.fill", .red, .lock)
                     }
                     HStack {
-                        action("Frunk", "car.front.waves.up.fill", .gray, .openFrunk)
+                        action(frunkOpen ? "Frunk open" : "Frunk", "car.front.waves.up.fill", .gray, .openFrunk)
                         action(trunkOpen ? "Close trunk" : "Trunk", "car.rear.fill", .gray, .openTrunk)
                     }
                     statusLine
-                    if let message = model.message {
-                        Text(message).font(.footnote).foregroundStyle(.red)
-                    }
                 }
-                NavigationLink("Settings") { SettingsView(model: model) }
-                    .font(.body)
-                    .padding(.top, 12)
-                    .padding(.bottom, 24)  // clear of the page dots
             }
         }
         #if os(iOS)
@@ -193,25 +211,34 @@ struct ControlsView: View {
         #endif
         .disabled(!isCurrent)
         .task(id: shouldPoll) { if shouldPoll { await model.pollLoop() } }
-        .alert("Open the frunk?", isPresented: $confirmingFrunk) {
+        .alert("Open frunk?", isPresented: $confirmingFrunk) {
             Button("Open") { Task { await model.perform(.openFrunk) } }
-            Button("Open, don't ask again") {
-                skipFrunkWarning = true
-                Task { await model.perform(.openFrunk) }
-            }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This app can't close the frunk. You'll need to close it by hand.")
+            Text("Close it by hand afterwards.")
         }
     }
 
     /// The car's state, refreshed automatically every 5 seconds while this screen is showing. When the car can't
     /// be reached the screen shows only "Car not in range" and a Reconnect button; it keeps checking every 15
     /// seconds in the background, and Reconnect tries straight away.
-    private var statusLine: some View { stateText }
+    @ViewBuilder
+    private var statusLine: some View {
+        // An error replaces the status text rather than adding a row, so everything stays on screen.
+        if isCurrent, let message = model.message {
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(.red)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, minHeight: 28)
+        } else {
+            stateText
+        }
+    }
 
     private var outOfRange: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             Label("Car not in range", systemImage: "antenna.radiowaves.left.and.right.slash")
                 .font(.headline)
                 .lineLimit(1)
@@ -237,17 +264,15 @@ struct ControlsView: View {
         }
         .font(.body)
         .foregroundStyle(lockState == nil ? .secondary : .primary)
-        .frame(maxWidth: .infinity, minHeight: 44)
+        .frame(maxWidth: .infinity, minHeight: 28)
         .contentShape(Rectangle())
         .animation(.default, value: lockState)
         .onTapGesture { Task { await model.pollOnce() } }
     }
 
     private func statusText(locked: Bool) -> String {
-        var parts = [locked ? "Locked" : "Unlocked"]
-        if frunkOpen { parts.append("frunk open") }
-        if trunkOpen { parts.append("trunk open") }
-        return parts.joined(separator: ", ")
+        // Open frunk and trunk show on their own buttons, which keeps this to one line.
+        locked ? "Locked" : "Unlocked"
     }
 
     private func trigger(_ action: VehicleAction) {
@@ -275,10 +300,13 @@ struct ControlsView: View {
                         Image(systemName: symbol)
                     }
                 }
-                .frame(height: 24)
-                Text(title).font(.caption2)
+                .frame(height: 20)
+                Text(title)
+                    .font(.caption2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .frame(maxWidth: .infinity, minHeight: 40)
         }
         .tint(tint)
         .disabled(model.busy)
@@ -294,9 +322,8 @@ struct SettingsView: View {
     var body: some View {
         List {
             NavigationLink("Keys") { KeysView(model: model) }
-            Toggle("Warn before frunk", isOn: Binding(get: { !skipFrunkWarning }, set: { skipFrunkWarning = !$0 }))
+            Toggle("Frunk alert", isOn: Binding(get: { !skipFrunkWarning }, set: { skipFrunkWarning = !$0 }))
             NavigationLink("Log") { LogView() }
-            Text("\(model.selected?.name ?? "") \u{00B7} VIN \(model.vin)").font(.footnote)
         }
     }
 }
@@ -317,11 +344,12 @@ struct KeysView: View {
                                 Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
                             }
                         }
-                        Text("\u{2026}\(profile.vinTail) \u{00B7} \(profile.enrolled ? "Paired" : "Not paired")")
-                            .font(.caption)
+                        Text("\u{2026}\(profile.vinTail) \u{00B7} \(profile.enrolled ? "Paired" : "Unpaired")")
+                            .font(.footnote)
                             .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
-                    .padding(.vertical, 6)
+                    .padding(.vertical, 2)
                 }
             }
             NavigationLink("Add key") { AddKeyView(model: model) }
@@ -339,43 +367,46 @@ struct KeyDetailView: View {
 
     private var profile: KeyProfile? { model.profiles.first { $0.id == id } }
 
+    /// "Last: 5:10 PM Unlock" for today, "Last: Nov 2 Unlock" for earlier days.
+    private func lastCommandText(_ profile: KeyProfile) -> String {
+        guard let at = profile.lastCommandAt else { return "No command yet" }
+        let when = Calendar.current.isDateInToday(at)
+            ? at.formatted(date: .omitted, time: .shortened)
+            : at.formatted(.dateTime.month(.abbreviated).day())
+        return "Last: \(when)" + (profile.lastCommand.map { " \($0)" } ?? "")
+    }
+
+    private func smallButton(_ title: String, role: ButtonRole? = nil, action: @escaping () -> Void) -> some View {
+        Button(role: role, action: action) {
+            Text(title).font(.body.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 36)
+        }
+        .buttonStyle(.bordered)
+    }
+
     var body: some View {
         ScrollView {
-            VStack(spacing: 14) {
+            VStack(spacing: 6) {
                 TextField("Name", text: $name)
                     .onSubmit { model.rename(id, to: name) }
                 if let profile {
-                    Text("VIN \(profile.vin)").font(.footnote).foregroundStyle(.secondary)
-                    VStack(spacing: 2) {
-                        Text("Last command sent").font(.footnote).foregroundStyle(.secondary)
-                        if let at = profile.lastCommandAt {
-                            Text(at.formatted(date: .abbreviated, time: .shortened)).font(.body.weight(.semibold))
-                            if let command = profile.lastCommand {
-                                Text(command).font(.footnote).foregroundStyle(.secondary)
+                    // Tapping the last-command line explains how to name this key on the car, which that time helps with.
+                    NavigationLink { NamingHelpView() } label: {
+                        Label(lastCommandText(profile), systemImage: "info.circle")
+                            .font(.footnote)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        if profile.enrolled {
+                            smallButton("Re-pair") {
+                                model.rename(id, to: name)
+                                model.markUnpaired(id)
                             }
-                        } else {
-                            Text("None yet").font(.body)
                         }
+                        smallButton("Delete", role: .destructive) { confirmingDelete = true }
                     }
-                    if model.selected?.id != id {
-                        BigButton(title: "Use this key") {
-                            model.rename(id, to: name)
-                            model.select(id)
-                            dismiss()
-                        }
-                    }
-                    if profile.enrolled {
-                        BigButton(title: "Pair again", prominent: false) {
-                            model.rename(id, to: name)
-                            model.markUnpaired(id)
-                        }
-                    }
-                    BigButton(title: "Delete", role: .destructive, prominent: false) { confirmingDelete = true }
-                        .padding(.top, 16)
-                    Text("To name this key on the car: open Controls > Locks on the car's screen, send a command from this app, then tap the edit button next to the key that moves to the top.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 8)
                 }
             }
         }
@@ -390,5 +421,16 @@ struct KeyDetailView: View {
         } message: {
             Text("It stays on the car's key list until you remove it there under Controls > Locks.")
         }
+    }
+}
+
+/// How to give a key a name on the car itself, which the app can't do because the pairing request has no name field.
+struct NamingHelpView: View {
+    var body: some View {
+        ScrollView {
+            Text("On the car, open Controls > Locks. Send a command from this app. The key moves to the top. Tap its edit button to name it.")
+                .font(.body)
+        }
+        .navigationTitle("Naming keys")
     }
 }

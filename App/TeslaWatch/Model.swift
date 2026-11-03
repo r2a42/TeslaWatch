@@ -173,7 +173,7 @@ final class CarModel: ObservableObject {
             let v = try self.makeVehicle()
             try await v.enroll(onAwaitingApproval: {
                 Task { @MainActor in
-                    self.message = "Tap your key card on the center console, then confirm on the car's screen."
+                    self.message = "Tap your key card on the console, then confirm on the car's screen."
                 }
             })
             if let i = self.profiles.firstIndex(where: { $0.id == id }) {
