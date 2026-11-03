@@ -213,12 +213,9 @@ struct ControlsView: View {
     private var outOfRange: some View {
         VStack(spacing: 8) {
             Label("Car not in range", systemImage: "antenna.radiowaves.left.and.right.slash")
-                .font(.title3.weight(.semibold))
-                .multilineTextAlignment(.center)
-            Text("Move closer, then tap Reconnect.")
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+                .font(.headline)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
             BigButton(title: model.reconnecting ? "Reconnecting\u{2026}" : "Reconnect") {
                 Task { await model.reconnect() }
             }
