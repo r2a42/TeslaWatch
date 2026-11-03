@@ -165,18 +165,22 @@ struct ControlsView: View {
                 Text(profile.name)
                     .font(.footnote.weight(.semibold))
                     .lineLimit(1)
-                if isCurrent && model.carReachable == false { outOfRange }
-                HStack {
-                    action("Unlock", "lock.open.fill", .green, .unlock)
-                    action("Lock", "lock.fill", .red, .lock)
-                }
-                HStack {
-                    action("Frunk", "car.front.waves.up.fill", .gray, .openFrunk)
-                    action(trunkOpen ? "Close trunk" : "Trunk", "car.rear.fill", .gray, .openTrunk)
-                }
-                statusLine
-                if let message = model.message {
-                    Text(message).font(.footnote).foregroundStyle(.red)
+                if isCurrent && model.carReachable == false {
+                    // Out of range: only the message and Reconnect, no command buttons.
+                    outOfRange
+                } else {
+                    HStack {
+                        action("Unlock", "lock.open.fill", .green, .unlock)
+                        action("Lock", "lock.fill", .red, .lock)
+                    }
+                    HStack {
+                        action("Frunk", "car.front.waves.up.fill", .gray, .openFrunk)
+                        action(trunkOpen ? "Close trunk" : "Trunk", "car.rear.fill", .gray, .openTrunk)
+                    }
+                    statusLine
+                    if let message = model.message {
+                        Text(message).font(.footnote).foregroundStyle(.red)
+                    }
                 }
                 NavigationLink("Settings") { SettingsView(model: model) }
                     .font(.body)
@@ -188,10 +192,7 @@ struct ControlsView: View {
         .refreshable { await model.pollOnce() }
         #endif
         .disabled(!isCurrent)
-        // Restarts when the screen shows or hides, and when the car comes back in range after a Reconnect.
-        .task(id: "\(shouldPoll)-\(model.carReachable != false)") {
-            if shouldPoll && model.carReachable != false { await model.pollLoop() }
-        }
+        .task(id: shouldPoll) { if shouldPoll { await model.pollLoop() } }
         .alert("Open the frunk?", isPresented: $confirmingFrunk) {
             Button("Open") { Task { await model.perform(.openFrunk) } }
             Button("Open, don't ask again") {
@@ -205,19 +206,23 @@ struct ControlsView: View {
     }
 
     /// The car's state, refreshed automatically every 5 seconds while this screen is showing. When the car can't
-    /// be reached it holds on "Car not in range" with a Reconnect button until you ask to try again.
-    @ViewBuilder
-    private var statusLine: some View {
-        // While the car is out of range the message and Reconnect button sit at the top instead.
-        if model.carReachable != false { stateText }
-    }
+    /// be reached the screen shows only "Car not in range" and a Reconnect button; it keeps checking every 15
+    /// seconds in the background, and Reconnect tries straight away.
+    private var statusLine: some View { stateText }
 
     private var outOfRange: some View {
         VStack(spacing: 8) {
             Label("Car not in range", systemImage: "antenna.radiowaves.left.and.right.slash")
+                .font(.title3.weight(.semibold))
+                .multilineTextAlignment(.center)
+            Text("Move closer, then tap Reconnect.")
                 .font(.body)
                 .foregroundStyle(.secondary)
-            BigButton(title: "Reconnect", prominent: false) { Task { await model.reconnect() } }
+                .multilineTextAlignment(.center)
+            BigButton(title: model.reconnecting ? "Reconnecting\u{2026}" : "Reconnect") {
+                Task { await model.reconnect() }
+            }
+            .disabled(model.reconnecting)
         }
     }
 

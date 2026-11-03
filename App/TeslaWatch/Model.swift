@@ -40,6 +40,8 @@ final class CarModel: ObservableObject {
     @Published private(set) var trunkOpen: Bool?
     /// Whether the last status poll reached the car. nil until the first poll finishes.
     @Published private(set) var carReachable: Bool?
+    /// True while a manual Reconnect is in progress.
+    @Published private(set) var reconnecting = false
     /// The command currently in flight, so only that button shows a spinner.
     @Published private(set) var activeAction: VehicleAction?
     /// Result of the last command, shown briefly on its button.
@@ -228,11 +230,11 @@ final class CarModel: ObservableObject {
     /// One quiet status read. It never sets `busy`, so the buttons stay enabled, and it is silent in the log
     /// except when the car's reachability or state changes. Returns false if the car couldn't be reached.
     @discardableResult
-    func pollOnce() async -> Bool {
+    func pollOnce(verbose: Bool = false) async -> Bool {
         guard !busy else { return true }
         if let running = pollInFlight { return await running.value }
         let task = Task { @MainActor () -> Bool in
-            TeslaLog.isMuted = true
+            TeslaLog.isMuted = !verbose
             defer { TeslaLog.isMuted = false }
             do {
                 let status = try await self.makeVehicle().status()
@@ -252,20 +254,22 @@ final class CarModel: ObservableObject {
         return ok
     }
 
-    /// Polls every 5 seconds until cancelled. Stops at the first failure: the screen then shows "Car not in
-    /// range" with a Reconnect button, so nothing keeps scanning while you're away from the car.
+    /// Polls until cancelled: every 5 seconds while the car answers, and only every 15 seconds while it is out of
+    /// range. Both stop when the screen goes away, and watchOS suspends the app soon after the wrist drops.
     func pollLoop() async {
         while !Task.isCancelled {
-            guard await pollOnce() else { return }
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            let ok = await pollOnce()
+            try? await Task.sleep(nanoseconds: (ok ? 5 : 15) * 1_000_000_000)
         }
     }
 
-    /// Tries the car again after "Car not in range". Success restarts the polling.
+    /// The Reconnect button: tries the car right now, with full logging so a failure can be diagnosed.
     func reconnect() async {
+        guard !reconnecting else { return }
         DebugLog.shared.add("App: reconnect tapped")
-        carReachable = nil
-        await pollOnce()
+        reconnecting = true
+        defer { reconnecting = false }
+        await pollOnce(verbose: true)
     }
 
     private func setReachable(_ reachable: Bool) {
