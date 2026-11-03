@@ -6,14 +6,29 @@ import WatchKit
 import UIKit
 #endif
 
+/// One named key: its own VIN and its own Secure Enclave key. `slot` is the keychain slot ("" is the key from
+/// before profiles existed, so an already-paired key keeps working).
+struct KeyProfile: Codable, Identifiable, Equatable {
+    var id = UUID()
+    var name: String
+    var vin: String
+    var enrolled = false
+    var slot: String
+
+    var vinTail: String { String(vin.suffix(6)) }
+}
+
 @MainActor
 final class CarModel: ObservableObject {
-    enum Step { case needsVIN, needsPairing, ready }
+    enum Step { case needsKey, needsPairing, ready }
 
-    @AppStorage("vin") private var storedVIN = ""
-    @AppStorage("enrolled") private var enrolled = false
+    @AppStorage("profiles") private var profilesJSON = ""
+    @AppStorage("selectedProfile") private var selectedID = ""
+    // Single-key storage from before profiles existed; read once for migration.
+    @AppStorage("vin") private var legacyVIN = ""
+    @AppStorage("enrolled") private var legacyEnrolled = false
 
-    @Published private(set) var step: Step = .needsVIN
+    @Published private(set) var profiles: [KeyProfile] = []
     @Published private(set) var busy = false
     @Published private(set) var message: String?
     @Published private(set) var lockState: Bool?
@@ -34,36 +49,105 @@ final class CarModel: ObservableObject {
 
     init() {
         _ = DebugLog.shared
-        refreshStep()
+        load()
     }
 
-    private func refreshStep() {
-        if storedVIN.isEmpty {
-            step = .needsVIN
-        } else if !enrolled {
-            step = .needsPairing
-        } else {
-            step = .ready
+    // MARK: Profiles
+
+    var selected: KeyProfile? { profiles.first { $0.id.uuidString == selectedID } ?? profiles.first }
+
+    var step: Step {
+        guard let selected else { return .needsKey }
+        return selected.enrolled ? .ready : .needsPairing
+    }
+
+    var vin: String { selected?.vin ?? "" }
+
+    private func load() {
+        if let data = profilesJSON.data(using: .utf8), let decoded = try? JSONDecoder().decode([KeyProfile].self, from: data) {
+            profiles = decoded
+        } else if !legacyVIN.isEmpty {
+            // Existing single key becomes the first profile, in the original keychain slot.
+            profiles = [KeyProfile(name: "My car", vin: legacyVIN, enrolled: legacyEnrolled, slot: "")]
+            selectedID = profiles[0].id.uuidString
+            save()
+            DebugLog.shared.add("App: migrated the existing key into a profile (paired: \(legacyEnrolled))")
         }
+    }
+
+    private func save() {
+        if let data = try? JSONEncoder().encode(profiles), let text = String(data: data, encoding: .utf8) {
+            profilesJSON = text
+        }
+    }
+
+    private func clearVehicleState() {
+        vehicle = nil
+        lockState = nil
+        frunkOpen = nil
+        trunkOpen = nil
+        message = nil
+    }
+
+    /// Adds a key with its own fresh Secure Enclave key and selects it. Returns false if the VIN is invalid.
+    @discardableResult
+    func addKey(name rawName: String, vin raw: String) -> Bool {
+        let vin = raw.uppercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard TeslaVehicle.isPlausibleVIN(vin) else {
+            message = TeslaError.invalidVIN.localizedDescription
+            return false
+        }
+        let trimmed = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = trimmed.isEmpty ? "Key \(profiles.count + 1)" : trimmed
+        let profile = KeyProfile(name: name, vin: vin, slot: UUID().uuidString)
+        profiles.append(profile)
+        selectedID = profile.id.uuidString
+        save()
+        clearVehicleState()
+        DebugLog.shared.add("App: added key \"\(name)\" (VIN ending \(profile.vinTail))")
+        return true
+    }
+
+    func select(_ id: UUID) {
+        guard !busy, profiles.contains(where: { $0.id == id }) else { return }
+        selectedID = id.uuidString
+        clearVehicleState()
+        DebugLog.shared.add("App: selected key \"\(selected?.name ?? "?")\"")
+    }
+
+    func rename(_ id: UUID, to name: String) {
+        guard let i = profiles.firstIndex(where: { $0.id == id }) else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        profiles[i].name = trimmed
+        save()
+    }
+
+    /// Marks a key as not paired so it can be paired again, for example after removing it from the car.
+    func markUnpaired(_ id: UUID) {
+        guard !busy, let i = profiles.firstIndex(where: { $0.id == id }) else { return }
+        profiles[i].enrolled = false
+        save()
+        if selected?.id == id { clearVehicleState() }
+    }
+
+    /// Deletes the key from this device. The car keeps trusting it until it is removed under Controls > Locks.
+    func delete(_ id: UUID) {
+        guard !busy, let profile = profiles.first(where: { $0.id == id }) else { return }
+        KeyStore.delete(slot: profile.slot)
+        profiles.removeAll { $0.id == id }
+        if selectedID == id.uuidString { selectedID = profiles.first?.id.uuidString ?? "" }
+        save()
+        clearVehicleState()
+        DebugLog.shared.add("App: deleted key \"\(profile.name)\"")
     }
 
     private func makeVehicle() throws -> TeslaVehicle {
         if let vehicle { return vehicle }
-        let v = try TeslaVehicle(vin: storedVIN, key: try KeyStore.loadOrCreate())
+        guard let selected else { throw TeslaError.invalidVIN }
+        let v = try TeslaVehicle(vin: selected.vin, key: try KeyStore.loadOrCreate(slot: selected.slot))
         vehicle = v
         return v
-    }
-
-    func saveVIN(_ raw: String) {
-        let vin = raw.uppercased().trimmingCharacters(in: .whitespaces)
-        guard TeslaVehicle.isPlausibleVIN(vin) else {
-            message = TeslaError.invalidVIN.localizedDescription
-            return
-        }
-        storedVIN = vin
-        vehicle = nil
-        message = nil
-        refreshStep()
     }
 
     /// Ends a pairing attempt that is stuck waiting for the car.
@@ -73,6 +157,7 @@ final class CarModel: ObservableObject {
     }
 
     func pair() async {
+        guard let id = selected?.id else { return }
         await run("pair", success: false) {
             let v = try self.makeVehicle()
             try await v.enroll(onAwaitingApproval: {
@@ -80,9 +165,11 @@ final class CarModel: ObservableObject {
                     self.message = "Tap your key card on the center console, then confirm on the car's screen."
                 }
             })
-            self.enrolled = true
+            if let i = self.profiles.firstIndex(where: { $0.id == id }) {
+                self.profiles[i].enrolled = true
+                self.save()
+            }
             self.message = nil
-            self.refreshStep()
         }
     }
 
@@ -131,20 +218,6 @@ final class CarModel: ObservableObject {
             }
         }
     }
-
-    func reset() {
-        KeyStore.deleteAll()
-        storedVIN = ""
-        enrolled = false
-        vehicle = nil
-        lockState = nil
-        frunkOpen = nil
-        trunkOpen = nil
-        message = nil
-        refreshStep()
-    }
-
-    var vin: String { storedVIN }
 
     private func run(_ name: String, success haptic: Bool, _ body: @escaping () async throws -> Void) async {
         guard !busy else { return }

@@ -56,60 +56,70 @@ public struct SecureEnclaveClientKey: ClientKey {
     }
 }
 
-/// Persists the client key in the keychain, preferring the Secure Enclave.
+/// Persists client keys in the keychain, preferring the Secure Enclave. Each key lives in a named slot, so one
+/// device can hold several keys. The default (empty) slot is the original single-key location.
 public enum KeyStore {
     private static let service = "TeslaWatch.clientkey"
-    private enum Account: String {
+    private enum Kind: String {
         case secureEnclave = "secure-enclave-v1"
         case software = "software-v1"
     }
 
-    /// Returns the stored key, creating one on first use.
-    public static func loadOrCreate() throws -> ClientKey {
-        if let blob = try read(.secureEnclave), let key = try? SecureEnclaveClientKey(dataRepresentation: blob) {
+    /// Returns the key in `slot`, creating one on first use.
+    public static func loadOrCreate(slot: String = "") throws -> ClientKey {
+        if let blob = try read(.secureEnclave, slot), let key = try? SecureEnclaveClientKey(dataRepresentation: blob) {
             return key
         }
-        if let raw = try read(.software), let key = try? SoftwareClientKey(rawRepresentation: raw) {
+        if let raw = try read(.software, slot), let key = try? SoftwareClientKey(rawRepresentation: raw) {
             return key
         }
         if SecureEnclave.isAvailable, let key = try? SecureEnclaveClientKey() {
-            try write(key.dataRepresentation, .secureEnclave)
+            try write(key.dataRepresentation, .secureEnclave, slot)
             return key
         }
         // Simulator and devices without a Secure Enclave.
         let key = SoftwareClientKey()
-        try write(key.rawRepresentation, .software)
+        try write(key.rawRepresentation, .software, slot)
         return key
     }
 
-    public static func existingKey() -> ClientKey? {
-        if let blob = try? read(.secureEnclave), let key = try? SecureEnclaveClientKey(dataRepresentation: blob) {
+    public static func existingKey(slot: String = "") -> ClientKey? {
+        if let blob = try? read(.secureEnclave, slot), let key = try? SecureEnclaveClientKey(dataRepresentation: blob) {
             return key
         }
-        if let raw = try? read(.software), let key = try? SoftwareClientKey(rawRepresentation: raw) {
+        if let raw = try? read(.software, slot), let key = try? SoftwareClientKey(rawRepresentation: raw) {
             return key
         }
         return nil
     }
 
-    /// Deletes the key. The car keeps trusting the old public key until you remove it in the
+    /// Deletes the key in `slot`. The car keeps trusting the old public key until you remove it in the
     /// car's Controls > Locks screen.
-    public static func deleteAll() {
-        for account in [Account.secureEnclave, .software] {
-            SecItemDelete(query(account) as CFDictionary)
+    public static func delete(slot: String) {
+        for kind in [Kind.secureEnclave, .software] {
+            SecItemDelete(query(kind, slot) as CFDictionary)
         }
     }
 
-    private static func query(_ account: Account) -> [String: Any] {
+    /// Deletes every key this app has stored, in all slots.
+    public static func deleteAll() {
+        let q: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+        ]
+        SecItemDelete(q as CFDictionary)
+    }
+
+    private static func query(_ kind: Kind, _ slot: String) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account.rawValue,
+            kSecAttrAccount as String: slot.isEmpty ? kind.rawValue : "\(kind.rawValue).\(slot)",
         ]
     }
 
-    private static func read(_ account: Account) throws -> Data? {
-        var q = query(account)
+    private static func read(_ kind: Kind, _ slot: String) throws -> Data? {
+        var q = query(kind, slot)
         q[kSecReturnData as String] = true
         q[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: CFTypeRef?
@@ -121,9 +131,9 @@ public enum KeyStore {
         return data
     }
 
-    private static func write(_ data: Data, _ account: Account) throws {
-        SecItemDelete(query(account) as CFDictionary)
-        var q = query(account)
+    private static func write(_ data: Data, _ kind: Kind, _ slot: String) throws {
+        SecItemDelete(query(kind, slot) as CFDictionary)
+        var q = query(kind, slot)
         q[kSecValueData as String] = data
         q[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         let status = SecItemAdd(q as CFDictionary, nil)
