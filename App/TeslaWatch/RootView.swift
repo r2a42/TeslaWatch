@@ -34,12 +34,36 @@ struct RootView: View {
 
     var body: some View {
         NavigationStack {
-            switch model.step {
-            case .needsKey: AddKeyView(model: model, isFirstKey: true)
-            case .needsPairing: PairingView(model: model)
-            case .ready: ControlsView(model: model)
+            if model.profiles.isEmpty {
+                AddKeyView(model: model, isFirstKey: true)
+            } else {
+                KeyPager(model: model)
             }
         }
+    }
+}
+
+/// One page per key; swipe sideways to switch. The page you land on becomes the key in use.
+struct KeyPager: View {
+    @ObservedObject var model: CarModel
+
+    var body: some View {
+        TabView(selection: Binding(
+            get: { model.selected?.id ?? UUID() },
+            set: { model.select($0) }
+        )) {
+            ForEach(model.profiles) { profile in
+                Group {
+                    if profile.enrolled {
+                        ControlsView(model: model, profile: profile)
+                    } else {
+                        PairingView(model: model, profile: profile)
+                    }
+                }
+                .tag(profile.id)
+            }
+        }
+        .tabViewStyle(.page)
     }
 }
 
@@ -76,11 +100,12 @@ struct AddKeyView: View {
 
 struct PairingView: View {
     @ObservedObject var model: CarModel
+    let profile: KeyProfile
 
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
-                Text("Pair \(model.selected?.name ?? "key")")
+                Text("Pair \(profile.name)")
                     .font(.title3.bold())
                     .multilineTextAlignment(.center)
                 if model.busy {
@@ -111,6 +136,7 @@ struct PairingView: View {
                     }
                     .font(.body)
                     .padding(.top, 24)
+                    .padding(.bottom, 24)
                 }
             }
         }
@@ -119,13 +145,20 @@ struct PairingView: View {
 
 struct ControlsView: View {
     @ObservedObject var model: CarModel
+    let profile: KeyProfile
     @AppStorage("skipFrunkWarning") private var skipFrunkWarning = false
     @State private var confirmingFrunk = false
+
+    private var isCurrent: Bool { model.selected?.id == profile.id }
+    // Only the page in use shows state; its neighbours are previews while you swipe.
+    private var lockState: Bool? { isCurrent ? model.lockState : nil }
+    private var frunkOpen: Bool { isCurrent && model.frunkOpen == true }
+    private var trunkOpen: Bool { isCurrent && model.trunkOpen == true }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 8) {
-                Text(model.selected?.name ?? "")
+                Text(profile.name)
                     .font(.footnote.weight(.semibold))
                     .lineLimit(1)
                 HStack {
@@ -134,7 +167,7 @@ struct ControlsView: View {
                 }
                 HStack {
                     action("Frunk", "car.front.waves.up.fill", .gray, .openFrunk)
-                    action(model.trunkOpen == true ? "Close trunk" : "Trunk", "car.rear.fill", .gray, .openTrunk)
+                    action(trunkOpen ? "Close trunk" : "Trunk", "car.rear.fill", .gray, .openTrunk)
                 }
                 statusLine
                 if let message = model.message {
@@ -143,9 +176,11 @@ struct ControlsView: View {
                 NavigationLink("Settings") { SettingsView(model: model) }
                     .font(.body)
                     .padding(.top, 12)
+                    .padding(.bottom, 24)  // clear of the page dots
             }
         }
-        .task { await model.refreshStatus(quiet: true) }
+        .disabled(!isCurrent)
+        .task(id: isCurrent) { if isCurrent { await model.refreshStatus(quiet: true) } }
         .alert("Open the frunk?", isPresented: $confirmingFrunk) {
             Button("Open") { Task { await model.perform(.openFrunk) } }
             Button("Open, don't ask again") {
@@ -162,7 +197,7 @@ struct ControlsView: View {
         HStack(spacing: 4) {
             if model.busy {
                 ProgressView()
-            } else if let locked = model.lockState {
+            } else if let locked = lockState {
                 Image(systemName: locked ? "lock.fill" : "lock.open.fill")
                     .contentTransition(.symbolEffect(.replace))
                 Text(statusText(locked: locked))
@@ -171,14 +206,14 @@ struct ControlsView: View {
             }
         }
         .font(.footnote)
-        .animation(.default, value: model.lockState)
+        .animation(.default, value: lockState)
         .onTapGesture { Task { await model.refreshStatus() } }
     }
 
     private func statusText(locked: Bool) -> String {
         var parts = [locked ? "Locked" : "Unlocked"]
-        if model.frunkOpen == true { parts.append("frunk open") }
-        if model.trunkOpen == true { parts.append("trunk open") }
+        if frunkOpen { parts.append("frunk open") }
+        if trunkOpen { parts.append("trunk open") }
         return parts.joined(separator: ", ")
     }
 
