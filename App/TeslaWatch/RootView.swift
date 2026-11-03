@@ -165,6 +165,7 @@ struct ControlsView: View {
                 Text(profile.name)
                     .font(.footnote.weight(.semibold))
                     .lineLimit(1)
+                if isCurrent && model.carReachable == false { outOfRange }
                 HStack {
                     action("Unlock", "lock.open.fill", .green, .unlock)
                     action("Lock", "lock.fill", .red, .lock)
@@ -187,7 +188,10 @@ struct ControlsView: View {
         .refreshable { await model.pollOnce() }
         #endif
         .disabled(!isCurrent)
-        .task(id: shouldPoll) { if shouldPoll { await model.pollLoop() } }
+        // Restarts when the screen shows or hides, and when the car comes back in range after a Reconnect.
+        .task(id: "\(shouldPoll)-\(model.carReachable != false)") {
+            if shouldPoll && model.carReachable != false { await model.pollLoop() }
+        }
         .alert("Open the frunk?", isPresented: $confirmingFrunk) {
             Button("Open") { Task { await model.perform(.openFrunk) } }
             Button("Open, don't ask again") {
@@ -200,14 +204,26 @@ struct ControlsView: View {
         }
     }
 
-    /// The car's state, refreshed automatically every few seconds while this screen is showing. Tapping it
-    /// checks straight away.
+    /// The car's state, refreshed automatically every 5 seconds while this screen is showing. When the car can't
+    /// be reached it holds on "Car not in range" with a Reconnect button until you ask to try again.
+    @ViewBuilder
     private var statusLine: some View {
+        // While the car is out of range the message and Reconnect button sit at the top instead.
+        if model.carReachable != false { stateText }
+    }
+
+    private var outOfRange: some View {
+        VStack(spacing: 8) {
+            Label("Car not in range", systemImage: "antenna.radiowaves.left.and.right.slash")
+                .font(.body)
+                .foregroundStyle(.secondary)
+            BigButton(title: "Reconnect", prominent: false) { Task { await model.reconnect() } }
+        }
+    }
+
+    private var stateText: some View {
         HStack(spacing: 6) {
-            if model.carReachable == false {
-                Image(systemName: "antenna.radiowaves.left.and.right.slash")
-                Text("Car not in range")
-            } else if let locked = lockState {
+            if let locked = lockState {
                 Image(systemName: locked ? "lock.fill" : "lock.open.fill")
                     .contentTransition(.symbolEffect(.replace))
                 Text(statusText(locked: locked))
@@ -218,7 +234,7 @@ struct ControlsView: View {
             }
         }
         .font(.body)
-        .foregroundStyle(model.carReachable == false || lockState == nil ? .secondary : .primary)
+        .foregroundStyle(lockState == nil ? .secondary : .primary)
         .frame(maxWidth: .infinity, minHeight: 44)
         .contentShape(Rectangle())
         .animation(.default, value: lockState)

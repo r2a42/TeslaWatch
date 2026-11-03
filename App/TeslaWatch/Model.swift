@@ -252,15 +252,20 @@ final class CarModel: ObservableObject {
         return ok
     }
 
-    /// Polls every few seconds until cancelled, slowing down while the car is out of range to spare the battery.
+    /// Polls every 5 seconds until cancelled. Stops at the first failure: the screen then shows "Car not in
+    /// range" with a Reconnect button, so nothing keeps scanning while you're away from the car.
     func pollLoop() async {
-        var failures = 0
         while !Task.isCancelled {
-            let ok = await pollOnce()
-            failures = ok ? 0 : min(failures + 1, 4)
-            let seconds = failures == 0 ? 5 : 5 + 5 * failures // 10, 15, 20, 25
-            try? await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000)
+            guard await pollOnce() else { return }
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
         }
+    }
+
+    /// Tries the car again after "Car not in range". Success restarts the polling.
+    func reconnect() async {
+        DebugLog.shared.add("App: reconnect tapped")
+        carReachable = nil
+        await pollOnce()
     }
 
     private func setReachable(_ reachable: Bool) {
