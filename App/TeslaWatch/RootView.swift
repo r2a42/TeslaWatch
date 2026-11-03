@@ -148,12 +148,16 @@ struct ControlsView: View {
     let profile: KeyProfile
     @AppStorage("skipFrunkWarning") private var skipFrunkWarning = false
     @State private var confirmingFrunk = false
+    @Environment(\.scenePhase) private var scenePhase
 
     private var isCurrent: Bool { model.selected?.id == profile.id }
-    // Only the page in use shows state; its neighbours are previews while you swipe.
-    private var lockState: Bool? { isCurrent ? model.lockState : nil }
-    private var frunkOpen: Bool { isCurrent && model.frunkOpen == true }
-    private var trunkOpen: Bool { isCurrent && model.trunkOpen == true }
+    /// Poll only while this page is in use and the app is on screen.
+    private var shouldPoll: Bool { isCurrent && scenePhase == .active }
+    // Only the page in use shows state, and only while the car is reachable. Neighbours are previews while you swipe.
+    private var showsState: Bool { isCurrent && model.carReachable != false }
+    private var lockState: Bool? { showsState ? model.lockState : nil }
+    private var frunkOpen: Bool { showsState && model.frunkOpen == true }
+    private var trunkOpen: Bool { showsState && model.trunkOpen == true }
 
     var body: some View {
         ScrollView {
@@ -180,10 +184,10 @@ struct ControlsView: View {
             }
         }
         #if os(iOS)
-        .refreshable { await model.refreshStatus() }
+        .refreshable { await model.pollOnce() }
         #endif
         .disabled(!isCurrent)
-        .task(id: isCurrent) { if isCurrent { await model.refreshStatus(quiet: true) } }
+        .task(id: shouldPoll) { if shouldPoll { await model.pollLoop() } }
         .alert("Open the frunk?", isPresented: $confirmingFrunk) {
             Button("Open") { Task { await model.perform(.openFrunk) } }
             Button("Open, don't ask again") {
@@ -196,29 +200,29 @@ struct ControlsView: View {
         }
     }
 
-    /// Shows the car's state and refreshes it when tapped. A full-size button, because pull-to-refresh
-    /// doesn't work on watchOS.
+    /// The car's state, refreshed automatically every few seconds while this screen is showing. Tapping it
+    /// checks straight away.
     private var statusLine: some View {
-        Button {
-            Task { await model.refreshStatus() }
-        } label: {
-            HStack(spacing: 6) {
-                if model.busy {
-                    ProgressView()
-                } else if let locked = lockState {
-                    Image(systemName: locked ? "lock.fill" : "lock.open.fill")
-                        .contentTransition(.symbolEffect(.replace))
-                    Text(statusText(locked: locked))
-                } else {
-                    Image(systemName: "arrow.clockwise")
-                    Text("Refresh")
-                }
+        HStack(spacing: 6) {
+            if model.carReachable == false {
+                Image(systemName: "antenna.radiowaves.left.and.right.slash")
+                Text("Car not in range")
+            } else if let locked = lockState {
+                Image(systemName: locked ? "lock.fill" : "lock.open.fill")
+                    .contentTransition(.symbolEffect(.replace))
+                Text(statusText(locked: locked))
+            } else if model.busy {
+                ProgressView()
+            } else {
+                Text("Checking\u{2026}")
             }
-            .font(.body)
-            .frame(maxWidth: .infinity, minHeight: 44)
         }
-        .buttonStyle(.bordered)
+        .font(.body)
+        .foregroundStyle(model.carReachable == false || lockState == nil ? .secondary : .primary)
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .contentShape(Rectangle())
         .animation(.default, value: lockState)
+        .onTapGesture { Task { await model.pollOnce() } }
     }
 
     private func statusText(locked: Bool) -> String {

@@ -38,6 +38,8 @@ final class CarModel: ObservableObject {
     @Published private(set) var lockState: Bool?
     @Published private(set) var frunkOpen: Bool?
     @Published private(set) var trunkOpen: Bool?
+    /// Whether the last status poll reached the car. nil until the first poll finishes.
+    @Published private(set) var carReachable: Bool?
     /// The command currently in flight, so only that button shows a spinner.
     @Published private(set) var activeAction: VehicleAction?
     /// Result of the last command, shown briefly on its button.
@@ -50,6 +52,7 @@ final class CarModel: ObservableObject {
     }
 
     private var vehicle: TeslaVehicle?
+    private var pollInFlight: Task<Bool, Never>?
 
     init() {
         _ = DebugLog.shared
@@ -90,6 +93,7 @@ final class CarModel: ObservableObject {
         lockState = nil
         frunkOpen = nil
         trunkOpen = nil
+        carReachable = nil
         message = nil
     }
 
@@ -162,6 +166,7 @@ final class CarModel: ObservableObject {
 
     func pair() async {
         guard let id = selected?.id else { return }
+        await stopPolling()
         await run("pair", success: false) {
             let v = try self.makeVehicle()
             try await v.enroll(onAwaitingApproval: {
@@ -179,6 +184,7 @@ final class CarModel: ObservableObject {
 
     func perform(_ action: VehicleAction) async {
         let id = selected?.id
+        await stopPolling()
         activeAction = action
         await run("\(action)", success: true) {
             let v = try self.makeVehicle()
@@ -206,26 +212,70 @@ final class CarModel: ObservableObject {
             // Trunk and frunk take a few seconds to move; read the state once they have settled.
             let settle: UInt64 = (action == .openTrunk || action == .openFrunk) ? 4_000_000_000 : 500_000_000
             try? await Task.sleep(nanoseconds: settle)
-            await refreshStatus(quiet: true)
+            await pollOnce()
         }
     }
 
-    func refreshStatus(quiet: Bool = false) async {
-        guard !busy else { return }
-        busy = true
-        defer { busy = false }
-        do {
-            let status = try await makeVehicle().status()
-            lockState = status.isLocked
-            frunkOpen = status.frunkOpen
-            trunkOpen = status.trunkOpen
-            DebugLog.shared.add("App: status ok locked=\(String(describing: status.isLocked)) frunkOpen=\(status.frunkOpen) trunkOpen=\(status.trunkOpen) doorOpen=\(status.anyDoorOpen)")
-        } catch {
-            DebugLog.shared.add("App: status failed (quiet: \(quiet)): \(error.localizedDescription) [\(error)]")
-            if !quiet {
-                message = error.localizedDescription
-                Haptics.failure()
+    // MARK: Status polling
+
+    /// Ends any status poll in flight so a command or pairing gets the car's Bluetooth connection straight away.
+    private func stopPolling() async {
+        guard let poll = pollInFlight else { return }
+        vehicle?.cancel()
+        _ = await poll.value
+    }
+
+    /// One quiet status read. It never sets `busy`, so the buttons stay enabled, and it is silent in the log
+    /// except when the car's reachability or state changes. Returns false if the car couldn't be reached.
+    @discardableResult
+    func pollOnce() async -> Bool {
+        guard !busy else { return true }
+        if let running = pollInFlight { return await running.value }
+        let task = Task { @MainActor () -> Bool in
+            TeslaLog.isMuted = true
+            defer { TeslaLog.isMuted = false }
+            do {
+                let status = try await self.makeVehicle().status()
+                self.setReachable(true)
+                self.apply(status)
+                return true
+            } catch TeslaError.cancelled {
+                return true // a command took over; not a failure
+            } catch {
+                self.setReachable(false)
+                return false
             }
+        }
+        pollInFlight = task
+        let ok = await task.value
+        pollInFlight = nil
+        return ok
+    }
+
+    /// Polls every few seconds until cancelled, slowing down while the car is out of range to spare the battery.
+    func pollLoop() async {
+        var failures = 0
+        while !Task.isCancelled {
+            let ok = await pollOnce()
+            failures = ok ? 0 : min(failures + 1, 4)
+            let seconds = failures == 0 ? 5 : 5 + 5 * failures // 10, 15, 20, 25
+            try? await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000)
+        }
+    }
+
+    private func setReachable(_ reachable: Bool) {
+        guard carReachable != reachable else { return }
+        carReachable = reachable
+        DebugLog.shared.add("App: car \(reachable ? "in range" : "not reachable")")
+    }
+
+    private func apply(_ status: VehicleStatus) {
+        let changed = lockState != status.isLocked || frunkOpen != status.frunkOpen || trunkOpen != status.trunkOpen
+        lockState = status.isLocked
+        frunkOpen = status.frunkOpen
+        trunkOpen = status.trunkOpen
+        if changed {
+            DebugLog.shared.add("App: state locked=\(String(describing: status.isLocked)) frunkOpen=\(status.frunkOpen) trunkOpen=\(status.trunkOpen) doorOpen=\(status.anyDoorOpen)")
         }
     }
 
