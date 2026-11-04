@@ -10,6 +10,8 @@ struct BLEFrameBuffer {
     private var lastRx: Date?
 
     /// Appends a received chunk and returns every message completed by it.
+    static let maxMessage = 1024
+
     mutating func append(_ chunk: Data, now: Date = Date()) -> [Data] {
         if let lastRx, now.timeIntervalSince(lastRx) > Self.rxTimeout { buffer.removeAll() }
         lastRx = now
@@ -18,6 +20,8 @@ struct BLEFrameBuffer {
         var messages = [Data]()
         while buffer.count >= 2 {
             let length = Int(buffer[0]) << 8 | Int(buffer[1])
+            // Real VCSEC messages are a few hundred bytes; a huge length is a corrupt header, so start over.
+            if length > Self.maxMessage { buffer.removeAll(); break }
             guard buffer.count >= 2 + length else { break }
             messages.append(Data(buffer[2..<2 + length]))
             buffer.removeFirst(2 + length)

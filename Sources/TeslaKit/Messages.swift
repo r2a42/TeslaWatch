@@ -403,8 +403,8 @@ struct FromVCSECMessage: Equatable {
             case 1:
                 var cr = ProtoReader(value.data ?? Data())
                 while let (f, v) = try cr.next() {
-                    // CLOSURESTATE_CLOSED = 0; anything else counts as not closed.
-                    let open = (v.uint64 ?? 0) != 0
+                    // CLOSED = 0, OPEN = 1, AJAR = 2, UNKNOWN = 3, FAILED_UNLATCH = 4, OPENING = 5, CLOSING = 6.
+                    let open = [1, 2, 5].contains(v.uint64 ?? 0)
                     switch f {
                     case 1...4: door = door || open
                     case 5: trunk = open

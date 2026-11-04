@@ -36,6 +36,10 @@ final class BLETransport: NSObject {
     func connect(advertisedName: String, timeout: TimeInterval) async throws {
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             queue.async {
+                if self.disconnected {
+                    cont.resume(throwing: TeslaError.cancelled)
+                    return
+                }
                 self.targetName = advertisedName
                 TeslaLog.log("BLE: scanning for \(advertisedName)")
                 self.connectContinuation = cont

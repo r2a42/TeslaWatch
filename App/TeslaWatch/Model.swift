@@ -22,11 +22,26 @@ struct KeyProfile: Codable, Identifiable, Equatable {
     var vinTail: String { String(vin.suffix(6)) }
 }
 
+extension KeyProfile {
+    /// Tolerates missing fields so a profile saved by an older or newer build still loads.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? "My car"
+        vin = try c.decode(String.self, forKey: .vin)
+        enrolled = try c.decodeIfPresent(Bool.self, forKey: .enrolled) ?? false
+        slot = try c.decode(String.self, forKey: .slot)
+        lastCommandAt = try c.decodeIfPresent(Date.self, forKey: .lastCommandAt)
+        lastCommand = try c.decodeIfPresent(String.self, forKey: .lastCommand)
+    }
+}
+
 @MainActor
 final class CarModel: ObservableObject {
     enum Step { case needsKey, needsPairing, ready }
 
     @AppStorage("profiles") private var profilesJSON = ""
+    @AppStorage("profilesBackup") private var profilesBackup = ""
     @AppStorage("selectedProfile") private var selectedID = ""
     // Single-key storage from before profiles existed; read once for migration.
     @AppStorage("vin") private var legacyVIN = ""
@@ -75,12 +90,18 @@ final class CarModel: ObservableObject {
     private func load() {
         if let data = profilesJSON.data(using: .utf8), let decoded = try? JSONDecoder().decode([KeyProfile].self, from: data) {
             profiles = decoded
+        } else if !profilesJSON.isEmpty {
+            // Don't overwrite what we can't read: keep a copy and start empty rather than wiping the keys.
+            DebugLog.shared.add("App: could not read saved keys; kept a backup")
+            profilesBackup = profilesJSON
         } else if !legacyVIN.isEmpty {
             // Existing single key becomes the first profile, in the original keychain slot.
             profiles = [KeyProfile(name: "My car", vin: legacyVIN, enrolled: legacyEnrolled, slot: "")]
             selectedID = profiles[0].id.uuidString
             save()
             DebugLog.shared.add("App: migrated the existing key into a profile (paired: \(legacyEnrolled))")
+            legacyVIN = ""
+            legacyEnrolled = false
         }
     }
 
@@ -91,6 +112,8 @@ final class CarModel: ObservableObject {
     }
 
     private func clearVehicleState() {
+        // Stop any status read still running for the previous key so its result can't land on the new one.
+        vehicle?.cancel()
         vehicle = nil
         lockState = nil
         frunkOpen = nil
@@ -153,6 +176,13 @@ final class CarModel: ObservableObject {
         if selected?.id == id { clearVehicleState() }
     }
 
+    private func markUnpairedNow(_ id: UUID) {
+        guard let i = profiles.firstIndex(where: { $0.id == id }) else { return }
+        profiles[i].enrolled = false
+        save()
+        DebugLog.shared.add("App: key \"\(profiles[i].name)\" needs pairing again")
+    }
+
     /// Deletes the key from this device. The car keeps trusting it until it is removed under Controls > Locks.
     func delete(_ id: UUID) {
         guard !busy, let profile = profiles.first(where: { $0.id == id }) else { return }
@@ -167,7 +197,18 @@ final class CarModel: ObservableObject {
     private func makeVehicle() throws -> TeslaVehicle {
         if let vehicle { return vehicle }
         guard let selected else { throw TeslaError.invalidVIN }
-        let v = try TeslaVehicle(vin: selected.vin, key: try KeyStore.loadOrCreate(slot: selected.slot))
+        let key: ClientKey
+        if selected.enrolled {
+            // A paired profile must use its existing key; making a new one would silently break pairing.
+            guard let existing = KeyStore.existingKey(slot: selected.slot) else {
+                markUnpairedNow(selected.id)
+                throw TeslaError.keyNotEnrolled
+            }
+            key = existing
+        } else {
+            key = try KeyStore.loadOrCreate(slot: selected.slot)
+        }
+        let v = try TeslaVehicle(vin: selected.vin, key: key)
         vehicle = v
         return v
     }
@@ -179,7 +220,8 @@ final class CarModel: ObservableObject {
     }
 
     func pair() async {
-        guard let id = selected?.id else { return }
+        guard !busy, let id = selected?.id else { return }
+        busy = true // before any await, so a second tap can't slip in
         await stopPolling()
         await run("pair", success: false) {
             let v = try self.makeVehicle()
@@ -197,10 +239,12 @@ final class CarModel: ObservableObject {
     }
 
     func perform(_ action: VehicleAction) async {
+        guard !busy else { return }
         let id = selected?.id
-        await stopPolling()
+        busy = true // before any await, so a second tap can't slip in
         activeAction = action
-        await run("\(action)", success: true) {
+        await stopPolling()
+        let failure = await run("\(action)", success: true) {
             let v = try self.makeVehicle()
             try await v.perform(action)
             switch action {
@@ -210,7 +254,8 @@ final class CarModel: ObservableObject {
             }
         }
         activeAction = nil
-        let succeeded = message == nil
+        let succeeded = failure == nil
+        if let failure = failure as? TeslaError, failure == .keyNotEnrolled, let id { markUnpairedNow(id) }
         if succeeded, let id, let i = profiles.firstIndex(where: { $0.id == id }) {
             profiles[i].lastCommandAt = Date()
             profiles[i].lastCommand = action.label
@@ -248,8 +293,10 @@ final class CarModel: ObservableObject {
         let task = Task { @MainActor () -> Bool in
             TeslaLog.isMuted = !verbose
             defer { TeslaLog.isMuted = false }
+            let id = self.selected?.id
             do {
                 let status = try await self.makeVehicle().status()
+                guard self.selected?.id == id else { return true }
                 self.setReachable(true)
                 self.apply(status)
                 return true
@@ -300,9 +347,9 @@ final class CarModel: ObservableObject {
         }
     }
 
-    private func run(_ name: String, success haptic: Bool, _ body: @escaping () async throws -> Void) async {
-        guard !busy else { return }
-        busy = true
+    /// Runs a command or pairing with `busy` already set by the caller. Returns the error, or nil on success.
+    @discardableResult
+    private func run(_ name: String, success haptic: Bool, _ body: @escaping () async throws -> Void) async -> Error? {
         message = nil
         DebugLog.shared.add("App: \(name) started")
         defer { busy = false }
@@ -310,10 +357,12 @@ final class CarModel: ObservableObject {
             try await body()
             DebugLog.shared.add("App: \(name) ok")
             if haptic { Haptics.success() }
+            return nil
         } catch {
             message = error.localizedDescription
             DebugLog.shared.add("App: \(name) failed: \(error.localizedDescription) [\(error)]")
             Haptics.failure()
+            return error
         }
     }
 }

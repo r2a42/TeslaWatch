@@ -44,8 +44,10 @@ public final class TeslaVehicle {
         case .openTrunk: payload = UnsignedMessage.closureMove(.rearTrunk)
         case .openFrunk: payload = UnsignedMessage.closureMove(.frontTrunk)
         }
+        // Trunk and frunk moves toggle, so a second send after a "wait" reply could undo the first.
+        let repeatable = (action == .lock || action == .unlock)
         try await withLink(deadline: commandDeadline) { link in
-            try await link.execute(payload)
+            try await link.execute(payload, retryWhenBusy: repeatable)
         }
     }
 
@@ -261,7 +263,7 @@ final class VehicleLink {
 
     /// Sends an `UnsignedMessage` to VCSEC and waits for the terminal reply, re-syncing the session
     /// or retrying when the car says it is busy.
-    func execute(_ plaintext: Data) async throws {
+    func execute(_ plaintext: Data, retryWhenBusy: Bool = true) async throws {
         var resynced = false
         var busyRetries = 0
         while true {
@@ -275,7 +277,7 @@ final class VehicleLink {
                     session = nil
                     continue
                 }
-                if error == .busy, busyRetries < 3 {
+                if error == .busy, retryWhenBusy, busyRetries < 3 {
                     busyRetries += 1
                     try await Task.sleep(nanoseconds: 500_000_000)
                     continue
@@ -293,8 +295,13 @@ final class VehicleLink {
         try await transport.send(signed.serialized())
 
         while true {
-            let reply = try await nextReply(timeout: 10)
+            let reply = try await nextReply(timeout: 10, requestUUID: request.uuid)
             if let fault = reply.status?.fault, fault != 0 { throw TeslaError.vehicleFault(fault) }
+            // We asked for encrypted replies, so one without the encryption data didn't come from our session.
+            guard reply.signatureData?.aesGCMResponse != nil else {
+                TeslaLog.log("Vehicle: skipped an unauthenticated command reply")
+                continue
+            }
             let body = try session.decrypt(reply, requestHash: requestHash)
             let fromVCSEC: FromVCSECMessage
             do { fromVCSEC = try FromVCSECMessage(serialized: body) } catch {
@@ -309,7 +316,7 @@ final class VehicleLink {
     }
 
     private static func checkForError(_ reply: FromVCSECMessage) throws {
-        if let code = reply.nominalError { throw TeslaError.vehicleRefused(code) }
+        if let code = reply.nominalError, code != 0 { throw TeslaError.vehicleRefused(code) }
         guard let status = reply.commandStatus else { return }
         switch status.operationStatus {
         case .ok:

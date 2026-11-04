@@ -85,6 +85,13 @@ final class TeslaKitTests: XCTestCase {
         XCTAssertEqual(out, [Data([7])])
     }
 
+    func testBLEFramingDiscardsCorruptHeader() {
+        var buffer = BLEFrameBuffer()
+        let t = Date()
+        XCTAssertEqual(buffer.append(Data([0xFF, 0xFF, 1, 2, 3]), now: t), []) // claims 65535 bytes
+        XCTAssertEqual(buffer.append(BLEFrameBuffer.frame(Data([7])), now: t), [Data([7])])
+    }
+
     // MARK: Crypto against the spec's test vectors
 
     func testSharedKeyMatchesSpec() throws {
@@ -202,6 +209,14 @@ final class TeslaKitTests: XCTestCase {
         var wrongRequest = Data(hex: Golden.requestHash)
         wrongRequest[1] ^= 1
         XCTAssertThrowsError(try fresh.decrypt(reply, requestHash: wrongRequest)) // bound to another request
+    }
+
+    func testStatusWithoutLockFieldMeansUnlocked() throws {
+        // vehicleStatus { closures { rearTrunk = OPEN (1), frontTrunk = UNKNOWN (3) } }, lock state omitted (proto3 zero)
+        let status = try XCTUnwrap(FromVCSECMessage(serialized: Data(hex: "0a060a0428013003")).vehicleStatus)
+        XCTAssertEqual(status.isLocked, false)
+        XCTAssertTrue(status.trunkOpen)
+        XCTAssertFalse(status.frunkOpen, "UNKNOWN is not open")
     }
 
     func testFromVCSECParsing() throws {
