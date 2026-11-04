@@ -394,7 +394,8 @@ struct FromVCSECMessage: Equatable {
     }
 
     private static func parseVehicleStatus(_ data: Data) throws -> VehicleStatus {
-        var locked: Bool?
+        // proto3 leaves out a field at its default, and VEHICLELOCKSTATE_UNLOCKED is 0, so no field means unlocked.
+        var locked: Bool? = false
         var frunk = false, trunk = false, door = false
         var r = ProtoReader(data)
         while let (field, value) = try r.next() {
