@@ -118,6 +118,18 @@ final class CarModel: ObservableObject {
         return true
     }
 
+    /// For testing the swipe UI with one car: a second profile for the same VIN marked as paired. Its key is not
+    /// known to the car, so commands from it fail; it is only for looking at the pager.
+    func addTestKey() {
+        guard let vin = selected?.vin ?? profiles.first?.vin else { return }
+        let profile = KeyProfile(name: "Test key \(profiles.count + 1)", vin: vin, enrolled: true, slot: UUID().uuidString)
+        profiles.append(profile)
+        selectedID = profile.id.uuidString
+        save()
+        clearVehicleState()
+        DebugLog.shared.add("App: added test key \"\(profile.name)\" (not known to the car)")
+    }
+
     func select(_ id: UUID) {
         guard !busy, profiles.contains(where: { $0.id == id }) else { return }
         selectedID = id.uuidString

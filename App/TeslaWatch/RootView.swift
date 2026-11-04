@@ -353,6 +353,9 @@ struct KeysView: View {
                 }
             }
             NavigationLink("Add key") { AddKeyView(model: model) }
+            #if os(iOS)
+            Button("Add test key (not paired)") { model.addTestKey() }
+            #endif
         }
         .navigationTitle("Keys")
     }
