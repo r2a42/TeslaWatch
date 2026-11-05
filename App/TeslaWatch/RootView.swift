@@ -138,7 +138,7 @@ private struct CarLidIcon: View {
             // so the two fit back together like puzzle pieces.
             let spans: [(Int, CGFloat, CGFloat)], hinge: CGPoint, turn: Double
             if front {
-                spans = [(1, 0.4, 1), (2, 0, 1)]               // hood: nose edge back to the windshield base
+                spans = [(2, 0.04, 1)]                          // hood top only: front edge back to the windshield base
                 hinge = skin(2, 1)
                 turn = angle // clockwise on screen: the nose end rises
             } else {
