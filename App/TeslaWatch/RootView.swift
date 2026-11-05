@@ -20,47 +20,17 @@ private enum Metrics {
     #endif
 }
 
-/// A small side-on Model Y facing left, with the tailgate (hinged at the roof) or the hood (hinged at the base of
-/// the windshield) swinging up. It takes about as long as the car does to open the trunk, so the icon doubles as
-/// the progress indicator.
+/// A small side-on Model Y facing left, with the tailgate (hinged at the top of the roof) or the frunk hood (hinged
+/// at the base of the windshield) swinging up. It takes about as long as the car does to open the trunk, so the
+/// icon doubles as the progress indicator.
 private struct CarLidIcon: View {
     let open: Bool
     var front = false
     let size: CGFloat
 
-    /// Points are fractions of the icon's width and height.
-    private static func pt(_ x: Double, _ y: Double, _ r: CGRect) -> CGPoint {
-        CGPoint(x: r.minX + x * r.width, y: r.minY + y * r.height)
-    }
-
-    /// Everything except the part that moves. Where the tailgate and hood sit, the body edge is lowered by the
-    /// thickness of the lid, so the closed car is a complete silhouette.
+    /// The whole car as one shape, drawn on a 100 x 43 grid (ground at y = 41.5) and scaled to fit.
+    /// `angle` is how far the lid has swung, in radians.
     private struct CarShape: Shape {
-        func path(in r: CGRect) -> Path {
-            func q(_ x: Double, _ y: Double) -> CGPoint { CarLidIcon.pt(x, y, r) }
-            var p = Path()
-            p.move(to: q(0.04, 0.72))
-            p.addLine(to: q(0.03, 0.60))
-            p.addQuadCurve(to: q(0.07, 0.555), control: q(0.03, 0.56)) // nose
-            p.addLine(to: q(0.30, 0.48))                              // hood, lowered
-            p.addLine(to: q(0.30, 0.42))                              // base of the windshield
-            p.addLine(to: q(0.46, 0.14))                              // windshield
-            p.addQuadCurve(to: q(0.66, 0.12), control: q(0.55, 0.08)) // roof
-            p.addLine(to: q(0.655, 0.20))
-            p.addLine(to: q(0.94, 0.54))                              // tailgate, lowered
-            p.addLine(to: q(0.965, 0.56))
-            p.addLine(to: q(0.965, 0.72))
-            p.closeSubpath()
-            for x in [0.22, 0.78] {
-                let rad = 0.075 * r.width
-                p.addEllipse(in: CGRect(x: q(x, 0).x - rad, y: q(0, 0.72).y - rad, width: 2 * rad, height: 2 * rad))
-            }
-            return p
-        }
-    }
-
-    /// The tailgate or hood: a thin slab turned about its hinge by `angle` radians.
-    private struct Lid: Shape {
         var angle: Double
         var front: Bool
         var animatableData: Double {
@@ -68,43 +38,93 @@ private struct CarLidIcon: View {
             set { angle = newValue }
         }
 
-        func path(in r: CGRect) -> Path {
-            let corners: [(Double, Double)]
-            let hinge: (Double, Double)
-            let sign: Double
-            if front {
-                hinge = (0.30, 0.42)
-                corners = [(0.30, 0.42), (0.065, 0.50), (0.07, 0.555), (0.30, 0.48)]
-                sign = 1
-            } else {
-                hinge = (0.66, 0.12)
-                corners = [(0.66, 0.12), (0.965, 0.47), (0.94, 0.54), (0.655, 0.20)]
-                sign = -1
-            }
-            let h = CarLidIcon.pt(hinge.0, hinge.1, r)
-            let c = cos(angle), s = sin(angle)
+        static let wheels: [CGFloat] = [22, 77.5]
+        static let wheelY: CGFloat = 34.2
+        static let tire: CGFloat = 7.3
+        static let arch: CGFloat = 8.9
+        static let sill: CGFloat = 36.4
+
+        /// Body outline with the wheel arches cut in.
+        static var silhouette: Path {
             var p = Path()
-            for (i, corner) in corners.enumerated() {
-                let point = CarLidIcon.pt(corner.0, corner.1, r)
-                let dx = point.x - h.x, dy = point.y - h.y
-                // y grows downward, so a positive sign turns the hood clockwise and the tailgate counter-clockwise.
-                let rotated = CGPoint(x: h.x + dx * c - sign * dy * s, y: h.y + sign * dx * s + dy * c)
-                if i == 0 { p.move(to: rotated) } else { p.addLine(to: rotated) }
+            p.move(to: CGPoint(x: 7.5, y: sill))
+            p.addCurve(to: CGPoint(x: 4, y: 30), control1: CGPoint(x: 4.6, y: sill), control2: CGPoint(x: 3.8, y: 33))     // nose
+            p.addCurve(to: CGPoint(x: 10, y: 23.6), control1: CGPoint(x: 4.2, y: 26.2), control2: CGPoint(x: 6.6, y: 24.1))
+            p.addCurve(to: CGPoint(x: 31, y: 20.2), control1: CGPoint(x: 17, y: 22.6), control2: CGPoint(x: 25, y: 21.4))   // hood
+            p.addCurve(to: CGPoint(x: 49, y: 10.4), control1: CGPoint(x: 37.5, y: 15.6), control2: CGPoint(x: 43.5, y: 11.1)) // windshield
+            p.addCurve(to: CGPoint(x: 91, y: 17.6), control1: CGPoint(x: 64, y: 8.8), control2: CGPoint(x: 83, y: 10.6))   // roof
+            p.addQuadCurve(to: CGPoint(x: 94.6, y: 19.2), control: CGPoint(x: 93.2, y: 17.7))                          // ducktail
+            p.addCurve(to: CGPoint(x: 96.2, y: 32.5), control1: CGPoint(x: 94.4, y: 23.5), control2: CGPoint(x: 96.4, y: 28.5))
+            p.addQuadCurve(to: CGPoint(x: 93.5, y: sill), control: CGPoint(x: 96.2, y: sill))
+            for cx in wheels.reversed() {
+                let dy = sill - wheelY, dx = (arch * arch - dy * dy).squareRoot()
+                p.addLine(to: CGPoint(x: cx + dx, y: sill))
+                let a0 = atan2(Double(dy), Double(dx))
+                for i in 1...24 {
+                    let a = a0 - (Double.pi + 2 * a0) * Double(i) / 24 // up and over the top of the wheel
+                    p.addLine(to: CGPoint(x: cx + arch * CGFloat(cos(a)), y: wheelY + arch * CGFloat(sin(a))))
+                }
             }
             p.closeSubpath()
             return p
         }
+
+        /// Side windows, split by the B and C pillars.
+        static var windows: Path {
+            var w = Path()
+            w.move(to: CGPoint(x: 36.5, y: 19.6))
+            w.addLine(to: CGPoint(x: 49.6, y: 12.6))
+            w.addCurve(to: CGPoint(x: 79, y: 16.6), control1: CGPoint(x: 61, y: 10.9), control2: CGPoint(x: 73, y: 11.8))
+            w.addQuadCurve(to: CGPoint(x: 78.4, y: 18.7), control: CGPoint(x: 80, y: 18))
+            w.addQuadCurve(to: CGPoint(x: 36.5, y: 19.6), control: CGPoint(x: 58, y: 18.8))
+            w.closeSubpath()
+            let pillars = Path { p in
+                p.addRect(CGRect(x: 58.2, y: 0, width: 1.9, height: 30))
+                p.addRect(CGRect(x: 72, y: 0, width: 1.5, height: 30))
+            }
+            return w.subtracting(pillars)
+        }
+
+        func path(in r: CGRect) -> Path {
+            // The lid: the part of the body behind (or in front of) the shut line, and the hinge it turns about.
+            let shut: Path, hinge: CGPoint, turn: Double
+            if front {
+                shut = Path { p in p.addLines([CGPoint(x: -1, y: -1), CGPoint(x: 31.4, y: -1), CGPoint(x: 31.4, y: 22.1),
+                                               CGPoint(x: 5, y: 26.8), CGPoint(x: -1, y: 26.8)]); p.closeSubpath() }
+                hinge = CGPoint(x: 31, y: 20.3)
+                turn = angle // clockwise on screen: the nose end rises
+            } else {
+                shut = Path { p in p.addLines([CGPoint(x: 77, y: -1), CGPoint(x: 101, y: -1), CGPoint(x: 101, y: 28),
+                                               CGPoint(x: 89, y: 28), CGPoint(x: 77, y: 12.6)]); p.closeSubpath() }
+                hinge = CGPoint(x: 77, y: 11.6)
+                turn = -angle // anticlockwise on screen: the lower edge swings up and back
+            }
+            let body = Self.silhouette
+            let lid = body.intersection(shut)
+                .applying(CGAffineTransform(translationX: -hinge.x, y: -hinge.y)
+                    .concatenating(CGAffineTransform(rotationAngle: turn))
+                    .concatenating(CGAffineTransform(translationX: hinge.x, y: hinge.y)))
+            // Closed, the car is one piece; as soon as the lid moves, the opening under it shows.
+            var car = angle > 0.001 ? body.subtracting(shut) : body
+            car = car.subtracting(Self.windows).union(lid)
+            for cx in Self.wheels {
+                let c = CGPoint(x: cx, y: Self.wheelY)
+                func disc(_ radius: CGFloat) -> Path {
+                    Path(ellipseIn: CGRect(x: c.x - radius, y: c.y - radius, width: 2 * radius, height: 2 * radius))
+                }
+                car = car.union(disc(Self.tire).subtracting(disc(4.3)).union(disc(3.0)))
+            }
+            let k = min(r.width / 100, r.height / 43)
+            return car.applying(CGAffineTransform(scaleX: k, y: k)
+                .concatenating(CGAffineTransform(translationX: r.midX - 50 * k, y: r.midY - 21.5 * k)))
+        }
     }
 
     var body: some View {
-        ZStack {
-            CarShape().fill()
-            Lid(angle: open ? (front ? 0.65 : 0.8) : 0, front: front)
-                .fill()
-                .overlay(Lid(angle: open ? (front ? 0.65 : 0.8) : 0, front: front).stroke(lineWidth: 0.7))
-        }
-        .frame(width: size * 2.1, height: size * 0.9)
-        .animation(.easeInOut(duration: 3.5), value: open)
+        CarShape(angle: open ? (front ? 0.78 : 0.96) : 0, front: front)
+            .fill()
+            .frame(width: size * 2.1, height: size * 0.9)
+            .animation(.easeInOut(duration: 3.5), value: open)
     }
 }
 
