@@ -432,8 +432,6 @@ struct ControlsView: View {
                 Image(systemName: locked ? "lock.fill" : "lock.open.fill")
                     .contentTransition(.symbolEffect(.replace))
                 Text(statusText(locked: locked))
-            } else if model.busy {
-                ProgressView()
             } else {
                 Text("Checking\u{2026}")
             }
@@ -471,8 +469,6 @@ struct ControlsView: View {
                         // The lid starts moving only once the car has accepted the command; until then it waits.
                         CarLidIcon(open: lid, front: action == .openFrunk,
                                    animated: isCurrent && model.lidMotion == action, size: Metrics.tileSymbol)
-                    } else if model.activeAction == action {
-                        ProgressView()
                     } else if let result {
                         Image(systemName: result.succeeded ? "checkmark.circle.fill" : "xmark.circle.fill")
                             .foregroundStyle(result.succeeded ? .green : .red)
@@ -497,7 +493,6 @@ struct ControlsView: View {
         #else
         .tint(tint)
         #endif
-        .disabled(model.busy)
         .animation(.easeInOut(duration: 0.2), value: model.feedback)
     }
 }
