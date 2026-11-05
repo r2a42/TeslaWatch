@@ -26,6 +26,8 @@ private enum Metrics {
 private struct CarLidIcon: View {
     let open: Bool
     var front = false
+    /// Only animate a change that comes from a command the car accepted, never from switching keys or a status read.
+    var animated = false
     let size: CGFloat
 
     /// The whole car as one shape, drawn on a 100 x 43 grid (ground at y = 41.5) and scaled to fit.
@@ -169,7 +171,7 @@ private struct CarLidIcon: View {
         CarShape(angle: open ? (front ? 0.96 : 1.13) : 0, front: front)
             .fill()
             .frame(width: size * 2.1, height: size * 0.9)
-            .animation(.easeInOut(duration: 3.5), value: open)
+            .animation(animated ? .easeInOut(duration: 3.5) : nil, value: open)
     }
 }
 
@@ -372,9 +374,9 @@ struct ControlsView: View {
                     }
                     HStack(spacing: Metrics.spacing) {
                         action(frunkOpen ? "Frunk open" : "Open frunk", "car.front.waves.up.fill", .gray, .openFrunk,
-                               lid: frunkOpen || model.activeAction == .openFrunk)
+                               lid: frunkOpen)
                         action(trunkOpen ? "Close trunk" : "Open trunk", "car.rear.fill", .gray, .openTrunk,
-                               lid: trunkOpen != (model.activeAction == .openTrunk))
+                               lid: trunkOpen)
                     }
                     statusLine
                 }
@@ -466,7 +468,11 @@ struct ControlsView: View {
             VStack {
                 ZStack {
                     if let lid, !(result?.succeeded == false) {
-                        CarLidIcon(open: lid, front: action == .openFrunk, size: Metrics.tileSymbol)
+                        // The lid starts moving only once the car has accepted the command; until then it waits.
+                        CarLidIcon(open: lid, front: action == .openFrunk,
+                                   animated: isCurrent && model.lidMotion == action, size: Metrics.tileSymbol)
+                            .opacity(model.activeAction == action ? 0.35 : 1)
+                            .overlay { if model.activeAction == action { ProgressView() } }
                     } else if model.activeAction == action {
                         ProgressView()
                     } else if let result {

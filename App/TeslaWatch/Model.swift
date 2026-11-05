@@ -61,6 +61,8 @@ final class CarModel: ObservableObject {
     @Published private(set) var activeAction: VehicleAction?
     /// Result of the last command, shown briefly on its button.
     @Published private(set) var feedback: ActionFeedback?
+    /// The trunk or frunk command the car just accepted; its icon animates only while this is set (about 3.5 s).
+    @Published private(set) var lidMotion: VehicleAction?
 
     struct ActionFeedback: Equatable {
         let id = UUID()
@@ -251,8 +253,12 @@ final class CarModel: ObservableObject {
             case .lock: self.lockState = true
             case .unlock: self.lockState = false
             // Show the new state straight away; the status read a few seconds later confirms it.
-            case .openTrunk: self.trunkOpen = !(self.trunkOpen ?? false)
-            case .openFrunk: self.frunkOpen = true
+            case .openTrunk:
+                self.startLidMotion(action)
+                self.trunkOpen = !(self.trunkOpen ?? false)
+            case .openFrunk:
+                self.startLidMotion(action)
+                self.frunkOpen = true
             }
         }
         activeAction = nil
@@ -274,6 +280,15 @@ final class CarModel: ObservableObject {
             let settle: UInt64 = (action == .openTrunk || action == .openFrunk) ? 4_000_000_000 : 500_000_000
             try? await Task.sleep(nanoseconds: settle)
             await pollOnce()
+        }
+    }
+
+    /// Marks the icon animation as allowed, in the same update as the state change that starts it.
+    private func startLidMotion(_ action: VehicleAction) {
+        lidMotion = action
+        Task {
+            try? await Task.sleep(nanoseconds: 3_700_000_000)
+            if lidMotion == action { lidMotion = nil }
         }
     }
 
