@@ -151,8 +151,9 @@ private struct CarLidIcon: View {
             let lid = sheet.applying(CGAffineTransform(translationX: -hinge.x, y: -hinge.y)
                 .concatenating(CGAffineTransform(rotationAngle: turn))
                 .concatenating(CGAffineTransform(translationX: hinge.x, y: hinge.y)))
-            // Closed, the car is one piece with no seam; as soon as the lid moves, its slot in the body shows.
-            var car = angle > 0.001 ? body.subtracting(Self.sheet(spans, out: 0.5)) : body
+            // Closed, the car is one piece with no seam. As the liftgate moves, its slot in the body shows; the hood
+            // is a plate lying on the hood, so the body under it stays whole.
+            var car = angle > 0.001 && !front ? body.subtracting(Self.sheet(spans, out: 0.5)) : body
             car = car.subtracting(Self.windows).union(lid)
             for cx in Self.wheels {
                 let c = CGPoint(x: cx, y: Self.wheelY)
