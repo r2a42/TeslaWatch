@@ -20,58 +20,90 @@ private enum Metrics {
     #endif
 }
 
-/// A small side-on car with a lid that swings up from the rear (or, flipped, the front). The lid takes about as
-/// long as the car does to open the trunk, so the icon doubles as the progress indicator.
+/// A small side-on Model Y facing left, with the tailgate (hinged at the roof) or the hood (hinged at the base of
+/// the windshield) swinging up. It takes about as long as the car does to open the trunk, so the icon doubles as
+/// the progress indicator.
 private struct CarLidIcon: View {
     let open: Bool
     var front = false
     let size: CGFloat
 
+    /// Points are fractions of the icon's width and height.
+    private static func pt(_ x: Double, _ y: Double, _ r: CGRect) -> CGPoint {
+        CGPoint(x: r.minX + x * r.width, y: r.minY + y * r.height)
+    }
+
+    /// Everything except the part that moves. Where the tailgate and hood sit, the body edge is lowered by the
+    /// thickness of the lid, so the closed car is a complete silhouette.
     private struct CarShape: Shape {
         func path(in r: CGRect) -> Path {
-            let w = r.width, h = r.height
+            func q(_ x: Double, _ y: Double) -> CGPoint { CarLidIcon.pt(x, y, r) }
             var p = Path()
-            p.addRoundedRect(in: CGRect(x: 0.04 * w, y: 0.45 * h, width: 0.92 * w, height: 0.33 * h),
-                             cornerSize: CGSize(width: 0.08 * w, height: 0.08 * w))
-            p.move(to: CGPoint(x: 0.2 * w, y: 0.45 * h))
-            p.addLine(to: CGPoint(x: 0.32 * w, y: 0.16 * h))
-            p.addLine(to: CGPoint(x: 0.62 * w, y: 0.16 * h))
-            p.addLine(to: CGPoint(x: 0.74 * w, y: 0.45 * h))
+            p.move(to: q(0.04, 0.72))
+            p.addLine(to: q(0.03, 0.60))
+            p.addQuadCurve(to: q(0.07, 0.555), control: q(0.03, 0.56)) // nose
+            p.addLine(to: q(0.30, 0.48))                              // hood, lowered
+            p.addLine(to: q(0.30, 0.42))                              // base of the windshield
+            p.addLine(to: q(0.46, 0.14))                              // windshield
+            p.addQuadCurve(to: q(0.66, 0.12), control: q(0.55, 0.08)) // roof
+            p.addLine(to: q(0.655, 0.20))
+            p.addLine(to: q(0.94, 0.54))                              // tailgate, lowered
+            p.addLine(to: q(0.965, 0.56))
+            p.addLine(to: q(0.965, 0.72))
             p.closeSubpath()
-            for x in [0.25, 0.75] {
-                p.addEllipse(in: CGRect(x: (x - 0.09) * w, y: 0.68 * h, width: 0.18 * w, height: 0.18 * w))
+            for x in [0.22, 0.78] {
+                let rad = 0.075 * r.width
+                p.addEllipse(in: CGRect(x: q(x, 0).x - rad, y: q(0, 0.72).y - rad, width: 2 * rad, height: 2 * rad))
             }
             return p
         }
     }
 
+    /// The tailgate or hood: a thin slab turned about its hinge by `angle` radians.
     private struct Lid: Shape {
-        var angle: Double // radians above flat
+        var angle: Double
+        var front: Bool
         var animatableData: Double {
             get { angle }
             set { angle = newValue }
         }
 
         func path(in r: CGRect) -> Path {
-            let w = r.width, h = r.height
-            let hinge = CGPoint(x: 0.95 * w, y: 0.45 * h)
-            let length = 0.24 * w
+            let corners: [(Double, Double)]
+            let hinge: (Double, Double)
+            let sign: Double
+            if front {
+                hinge = (0.30, 0.42)
+                corners = [(0.30, 0.42), (0.065, 0.50), (0.07, 0.555), (0.30, 0.48)]
+                sign = 1
+            } else {
+                hinge = (0.66, 0.12)
+                corners = [(0.66, 0.12), (0.965, 0.47), (0.94, 0.54), (0.655, 0.20)]
+                sign = -1
+            }
+            let h = CarLidIcon.pt(hinge.0, hinge.1, r)
+            let c = cos(angle), s = sin(angle)
             var p = Path()
-            p.move(to: hinge)
-            p.addLine(to: CGPoint(x: hinge.x - length * cos(angle), y: hinge.y - length * sin(angle)))
+            for (i, corner) in corners.enumerated() {
+                let point = CarLidIcon.pt(corner.0, corner.1, r)
+                let dx = point.x - h.x, dy = point.y - h.y
+                // y grows downward, so a positive sign turns the hood clockwise and the tailgate counter-clockwise.
+                let rotated = CGPoint(x: h.x + dx * c - sign * dy * s, y: h.y + sign * dx * s + dy * c)
+                if i == 0 { p.move(to: rotated) } else { p.addLine(to: rotated) }
+            }
+            p.closeSubpath()
             return p
         }
     }
 
     var body: some View {
-        let width = size * 1.5
         ZStack {
             CarShape().fill()
-            Lid(angle: open ? 1.15 : 0)
-                .stroke(style: StrokeStyle(lineWidth: size * 0.14, lineCap: .round))
+            Lid(angle: open ? (front ? 0.65 : 0.8) : 0, front: front)
+                .fill()
+                .overlay(Lid(angle: open ? (front ? 0.65 : 0.8) : 0, front: front).stroke(lineWidth: 0.7))
         }
-        .frame(width: width, height: size)
-        .scaleEffect(x: front ? -1 : 1)
+        .frame(width: size * 2.1, height: size * 0.9)
         .animation(.easeInOut(duration: 3.5), value: open)
     }
 }
