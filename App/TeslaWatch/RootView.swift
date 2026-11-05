@@ -43,19 +43,54 @@ private struct CarLidIcon: View {
         static let tire: CGFloat = 7.3
         static let arch: CGFloat = 8.9
         static let sill: CGFloat = 36.4
+        static let thickness: CGFloat = 2.6
+
+        /// The upper outline from the front bumper to the rear bumper, as cubic Bezier segments (start, control 1,
+        /// control 2, end), running clockwise on screen.
+        static let skin: [[CGPoint]] = [
+            [(7.5, 36.4), (4.6, 36.4), (3.8, 33), (4, 30)],        // nose
+            [(4, 30), (4.2, 26), (6, 23.9), (8.5, 23.4)],
+            [(8.5, 23.4), (13, 21.9), (21, 20.6), (26, 20.4)],     // domed hood
+            [(26, 20.4), (34, 15.4), (42, 11.4), (49, 10.4)],      // windshield
+            [(49, 10.4), (60, 9), (82, 9.8), (89.5, 16.4)],        // roof
+            [(89.5, 16.4), (91.5, 16.4), (92.7, 16.9), (93, 18)],  // ducktail
+            [(93, 18), (92.8, 22), (94.6, 26), (94.2, 29.5)],      // tail
+            [(94.2, 29.5), (94.2, 32.8), (93.3, 34.4), (91.5, 34.4)], // high rear bumper
+        ].map { $0.map { CGPoint(x: $0.0, y: $0.1) } }
+
+        static func bezier(_ s: [CGPoint], _ t: CGFloat) -> CGPoint {
+            let u = 1 - t
+            let a = u * u * u, b = 3 * u * u * t, c = 3 * u * t * t, d = t * t * t
+            return CGPoint(x: a * s[0].x + b * s[1].x + c * s[2].x + d * s[3].x,
+                           y: a * s[0].y + b * s[1].y + c * s[2].y + d * s[3].y)
+        }
+
+        /// A lid: the sheet between the skin and `thickness` inside it, over the given stretches of skin
+        /// (segment, start t, end t). `out` widens it outward so it can cleanly cut its own slot from the body.
+        static func sheet(_ spans: [(Int, CGFloat, CGFloat)], out: CGFloat = 0) -> Path {
+            var pts: [CGPoint] = []
+            for (seg, t0, t1) in spans {
+                for i in (pts.isEmpty ? 0 : 1)...40 { pts.append(bezier(skin[seg], t0 + (t1 - t0) * CGFloat(i) / 40)) }
+            }
+            var outer: [CGPoint] = [], inner: [CGPoint] = []
+            for i in pts.indices {
+                let a = pts[max(i - 2, 0)], b = pts[min(i + 2, pts.count - 1)]
+                let dx = b.x - a.x, dy = b.y - a.y, l = max((dx * dx + dy * dy).squareRoot(), 0.0001)
+                let n = CGPoint(x: -dy / l, y: dx / l) // points into the body
+                outer.append(CGPoint(x: pts[i].x - out * n.x, y: pts[i].y - out * n.y))
+                inner.append(CGPoint(x: pts[i].x + thickness * n.x, y: pts[i].y + thickness * n.y))
+            }
+            return Path { p in
+                p.addLines(outer + inner.reversed())
+                p.closeSubpath()
+            }
+        }
 
         /// Body outline with the wheel arches cut in.
         static var silhouette: Path {
             var p = Path()
-            p.move(to: CGPoint(x: 7.5, y: sill))
-            p.addCurve(to: CGPoint(x: 4, y: 30), control1: CGPoint(x: 4.6, y: sill), control2: CGPoint(x: 3.8, y: 33))     // nose
-            p.addCurve(to: CGPoint(x: 8.5, y: 23.4), control1: CGPoint(x: 4.2, y: 26), control2: CGPoint(x: 6, y: 23.9))
-            p.addCurve(to: CGPoint(x: 26, y: 20.4), control1: CGPoint(x: 13, y: 21.9), control2: CGPoint(x: 21, y: 20.6))  // domed hood
-            p.addCurve(to: CGPoint(x: 49, y: 10.4), control1: CGPoint(x: 34, y: 15.4), control2: CGPoint(x: 42, y: 11.4))  // windshield
-            p.addCurve(to: CGPoint(x: 89.5, y: 16.4), control1: CGPoint(x: 60, y: 9), control2: CGPoint(x: 82, y: 9.8))    // roof
-            p.addQuadCurve(to: CGPoint(x: 93, y: 18), control: CGPoint(x: 92, y: 16.4))                               // ducktail
-            p.addCurve(to: CGPoint(x: 94.2, y: 29.5), control1: CGPoint(x: 92.8, y: 22), control2: CGPoint(x: 94.6, y: 26))
-            p.addQuadCurve(to: CGPoint(x: 91.5, y: 34.4), control: CGPoint(x: 94.2, y: 34.4))                          // high rear bumper
+            p.move(to: skin[0][0])
+            for seg in skin { p.addCurve(to: seg[3], control1: seg[1], control2: seg[2]) }
             for cx in wheels.reversed() {
                 let dy = sill - wheelY, dx = (arch * arch - dy * dy).squareRoot()
                 p.addLine(to: CGPoint(x: cx + dx, y: sill))
@@ -96,31 +131,28 @@ private struct CarLidIcon: View {
             Path(ellipseIn: CGRect(x: c.x - radius, y: c.y - radius, width: 2 * radius, height: 2 * radius))
         }
 
+        func skin(_ seg: Int, _ t: CGFloat) -> CGPoint { Self.bezier(Self.skin[seg], t) }
+
         func path(in r: CGRect) -> Path {
-            // `shut` is the part of the body that belongs to the lid; `inside` is hollowed out of it so the lid is a
-            // shell; `well` is the opening left in the body once the lid lifts.
-            let shut: Path, inside: Path, well: Path, hinge: CGPoint, turn: Double
+            // Each lid is a thin sheet of the car's own skin (see `sheet`). The body keeps the exact slot it leaves,
+            // so the two fit back together like puzzle pieces.
+            let spans: [(Int, CGFloat, CGFloat)], hinge: CGPoint, turn: Double
             if front {
-                shut = Self.polygon([(-1, -1), (26.4, -1), (26.4, 24), (4, 27.8), (-1, 27.8)])
-                inside = Path()
-                well = shut.union(Path(CGRect(x: 8.2, y: -1, width: 18.2, height: 28.6))
-                    .subtracting(Self.disc(CGPoint(x: Self.wheels[0], y: Self.wheelY), Self.arch + 1.4)))
-                hinge = CGPoint(x: 26.2, y: 20.5)
+                spans = [(1, 0.4, 1), (2, 0, 1)]               // hood: nose edge back to the windshield base
+                hinge = skin(2, 1)
                 turn = angle // clockwise on screen: the nose end rises
             } else {
-                shut = Self.polygon([(75.5, -1), (101, -1), (101, 28.5), (86.5, 28.5), (75.5, 12)])
-                inside = Self.polygon([(73, 15.6), (86, 20.4), (89.2, 23.6), (89.2, 40), (73, 40)])
-                well = shut.union(Self.polygon([(75.5, 12), (75.5, 20), (78, 23.6), (86.5, 28.5)]))
-                hinge = CGPoint(x: 75.5, y: 11.1)
+                spans = [(4, 0.61, 1), (5, 0, 1), (6, 0, 0.93)] // liftgate: top rear of the roof down to the bumper
+                hinge = skin(4, 0.61)
                 turn = -angle // anticlockwise on screen: the lower edge swings up and back
             }
             let body = Self.silhouette
-            let lid = body.intersection(shut).subtracting(inside)
-                .applying(CGAffineTransform(translationX: -hinge.x, y: -hinge.y)
-                    .concatenating(CGAffineTransform(rotationAngle: turn))
-                    .concatenating(CGAffineTransform(translationX: hinge.x, y: hinge.y)))
-            // Closed, the car is one piece; as soon as the lid moves, the opening under it shows.
-            var car = angle > 0.001 ? body.subtracting(well) : body
+            let sheet = Self.sheet(spans)
+            let lid = sheet.applying(CGAffineTransform(translationX: -hinge.x, y: -hinge.y)
+                .concatenating(CGAffineTransform(rotationAngle: turn))
+                .concatenating(CGAffineTransform(translationX: hinge.x, y: hinge.y)))
+            // Closed, the car is one piece with no seam; as soon as the lid moves, its slot in the body shows.
+            var car = angle > 0.001 ? body.subtracting(Self.sheet(spans, out: 0.5)) : body
             car = car.subtracting(Self.windows).union(lid)
             for cx in Self.wheels {
                 let c = CGPoint(x: cx, y: Self.wheelY)
