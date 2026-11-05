@@ -250,7 +250,9 @@ final class CarModel: ObservableObject {
             switch action {
             case .lock: self.lockState = true
             case .unlock: self.lockState = false
-            default: break
+            // Show the new state straight away; the status read a few seconds later confirms it.
+            case .openTrunk: self.trunkOpen = !(self.trunkOpen ?? false)
+            case .openFrunk: self.frunkOpen = true
             }
         }
         activeAction = nil

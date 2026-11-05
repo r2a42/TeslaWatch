@@ -20,6 +20,62 @@ private enum Metrics {
     #endif
 }
 
+/// A small side-on car with a lid that swings up from the rear (or, flipped, the front). The lid takes about as
+/// long as the car does to open the trunk, so the icon doubles as the progress indicator.
+private struct CarLidIcon: View {
+    let open: Bool
+    var front = false
+    let size: CGFloat
+
+    private struct CarShape: Shape {
+        func path(in r: CGRect) -> Path {
+            let w = r.width, h = r.height
+            var p = Path()
+            p.addRoundedRect(in: CGRect(x: 0.04 * w, y: 0.45 * h, width: 0.92 * w, height: 0.33 * h),
+                             cornerSize: CGSize(width: 0.08 * w, height: 0.08 * w))
+            p.move(to: CGPoint(x: 0.2 * w, y: 0.45 * h))
+            p.addLine(to: CGPoint(x: 0.32 * w, y: 0.16 * h))
+            p.addLine(to: CGPoint(x: 0.62 * w, y: 0.16 * h))
+            p.addLine(to: CGPoint(x: 0.74 * w, y: 0.45 * h))
+            p.closeSubpath()
+            for x in [0.25, 0.75] {
+                p.addEllipse(in: CGRect(x: (x - 0.09) * w, y: 0.68 * h, width: 0.18 * w, height: 0.18 * w))
+            }
+            return p
+        }
+    }
+
+    private struct Lid: Shape {
+        var angle: Double // radians above flat
+        var animatableData: Double {
+            get { angle }
+            set { angle = newValue }
+        }
+
+        func path(in r: CGRect) -> Path {
+            let w = r.width, h = r.height
+            let hinge = CGPoint(x: 0.95 * w, y: 0.45 * h)
+            let length = 0.24 * w
+            var p = Path()
+            p.move(to: hinge)
+            p.addLine(to: CGPoint(x: hinge.x - length * cos(angle), y: hinge.y - length * sin(angle)))
+            return p
+        }
+    }
+
+    var body: some View {
+        let width = size * 1.5
+        ZStack {
+            CarShape().fill()
+            Lid(angle: open ? 1.15 : 0)
+                .stroke(style: StrokeStyle(lineWidth: size * 0.14, lineCap: .round))
+        }
+        .frame(width: width, height: size)
+        .scaleEffect(x: front ? -1 : 1)
+        .animation(.easeInOut(duration: 3.5), value: open)
+    }
+}
+
 /// Large, full-width button used for the main action on a screen, so it is easy to hit on a watch.
 private struct BigButton: View {
     let title: String
@@ -218,8 +274,10 @@ struct ControlsView: View {
                         action("Lock", "lock.fill", .red, .lock)
                     }
                     HStack(spacing: Metrics.spacing) {
-                        action(frunkOpen ? "Frunk open" : "Frunk", "car.front.waves.up.fill", .gray, .openFrunk)
-                        action(trunkOpen ? "Close trunk" : "Trunk", "car.rear.fill", .gray, .openTrunk)
+                        action(frunkOpen ? "Frunk open" : "Open frunk", "car.front.waves.up.fill", .gray, .openFrunk,
+                               lid: frunkOpen || model.activeAction == .openFrunk)
+                        action(trunkOpen ? "Close trunk" : "Open trunk", "car.rear.fill", .gray, .openTrunk,
+                               lid: trunkOpen != (model.activeAction == .openTrunk))
                     }
                     statusLine
                 }
@@ -302,14 +360,17 @@ struct ControlsView: View {
         }
     }
 
-    private func action(_ title: String, _ symbol: String, _ tint: Color, _ action: VehicleAction) -> some View {
+    /// `lid` is non-nil for the trunk and frunk, whose icon animates open or closed instead of showing a spinner.
+    private func action(_ title: String, _ symbol: String, _ tint: Color, _ action: VehicleAction, lid: Bool? = nil) -> some View {
         let result = model.feedback?.action == action ? model.feedback : nil
         return Button {
             trigger(action)
         } label: {
             VStack {
                 ZStack {
-                    if model.activeAction == action {
+                    if let lid, !(result?.succeeded == false) {
+                        CarLidIcon(open: lid, front: action == .openFrunk, size: Metrics.tileSymbol)
+                    } else if model.activeAction == action {
                         ProgressView()
                     } else if let result {
                         Image(systemName: result.succeeded ? "checkmark.circle.fill" : "xmark.circle.fill")
@@ -336,7 +397,6 @@ struct ControlsView: View {
         .tint(tint)
         #endif
         .disabled(model.busy)
-        .animation(.easeInOut(duration: 0.2), value: model.activeAction)
         .animation(.easeInOut(duration: 0.2), value: model.feedback)
     }
 }
