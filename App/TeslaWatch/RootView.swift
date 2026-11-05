@@ -1,6 +1,25 @@
 import SwiftUI
 import TeslaKit
 
+/// Sizes that differ between the watch and the iPhone test build, which has far more room.
+private enum Metrics {
+    #if os(iOS)
+    static let buttonHeight: CGFloat = 56
+    static let tileHeight: CGFloat = 120
+    static let tileSymbol: CGFloat = 38
+    static let tileFont = Font.title3.weight(.semibold)
+    static let statusFont = Font.title2.weight(.medium)
+    static let spacing: CGFloat = 14
+    #else
+    static let buttonHeight: CGFloat = 44
+    static let tileHeight: CGFloat = 40
+    static let tileSymbol: CGFloat = 17
+    static let tileFont = Font.caption2
+    static let statusFont = Font.body
+    static let spacing: CGFloat = 6
+    #endif
+}
+
 /// Large, full-width button used for the main action on a screen, so it is easy to hit on a watch.
 private struct BigButton: View {
     let title: String
@@ -12,7 +31,7 @@ private struct BigButton: View {
         Button(role: role, action: action) {
             Text(title)
                 .font(.title3.weight(.semibold))
-                .frame(maxWidth: .infinity, minHeight: 44)
+                .frame(maxWidth: .infinity, minHeight: Metrics.buttonHeight)
         }
         .buttonStyle(.bordered)
         .modifier(ProminentIf(prominent))
@@ -185,7 +204,7 @@ struct ControlsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 6) {
+            VStack(spacing: Metrics.spacing) {
                 // The page dots already show there are several keys; the name matters only then.
                 if model.profiles.count > 1 {
                     KeyHeader(model: model, title: profile.name, profile: profile)
@@ -194,11 +213,11 @@ struct ControlsView: View {
                     // Out of range: only the message and Reconnect, no command buttons.
                     outOfRange
                 } else {
-                    HStack {
+                    HStack(spacing: Metrics.spacing) {
                         action("Unlock", "lock.open.fill", .green, .unlock)
                         action("Lock", "lock.fill", .red, .lock)
                     }
-                    HStack {
+                    HStack(spacing: Metrics.spacing) {
                         action(frunkOpen ? "Frunk open" : "Frunk", "car.front.waves.up.fill", .gray, .openFrunk)
                         action(trunkOpen ? "Close trunk" : "Trunk", "car.rear.fill", .gray, .openTrunk)
                     }
@@ -262,7 +281,7 @@ struct ControlsView: View {
                 Text("Checking\u{2026}")
             }
         }
-        .font(.body)
+        .font(Metrics.statusFont)
         .foregroundStyle(lockState == nil ? .secondary : .primary)
         .frame(maxWidth: .infinity, minHeight: 28)
         .contentShape(Rectangle())
@@ -300,15 +319,22 @@ struct ControlsView: View {
                         Image(systemName: symbol)
                     }
                 }
-                .frame(height: 20)
+                .font(.system(size: Metrics.tileSymbol))
+                .frame(height: Metrics.tileSymbol + 3)
                 Text(title)
-                    .font(.caption2)
+                    .font(Metrics.tileFont)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
             }
-            .frame(maxWidth: .infinity, minHeight: 40)
+            .frame(maxWidth: .infinity, minHeight: Metrics.tileHeight)
         }
+        #if os(iOS)
+        .buttonStyle(.borderedProminent)
+        .buttonBorderShape(.roundedRectangle(radius: 20))
+        .tint(tint.opacity(0.85))
+        #else
         .tint(tint)
+        #endif
         .disabled(model.busy)
         .animation(.easeInOut(duration: 0.2), value: model.activeAction)
         .animation(.easeInOut(duration: 0.2), value: model.feedback)

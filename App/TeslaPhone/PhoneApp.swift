@@ -7,7 +7,7 @@ struct TeslaPhoneApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
-                .frame(maxWidth: 360)
+                .frame(maxWidth: 520)
         }
     }
 }
