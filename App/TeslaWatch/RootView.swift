@@ -526,7 +526,7 @@ struct KeysView: View {
                                 Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
                             }
                         }
-                        Text("\u{2026}\(profile.vinTail) \u{00B7} \(profile.enrolled ? "Paired" : "Unpaired")")
+                        Text("\u{2026}\(profile.vinTail) \u{00B7} \(profile.isTest ? "Simulated" : profile.enrolled ? "Paired" : "Unpaired")")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -536,7 +536,7 @@ struct KeysView: View {
             }
             NavigationLink("Add key") { AddKeyView(model: model) }
             #if os(iOS)
-            Button("Add test key (not paired)") { model.addTestKey() }
+            Button("Add simulated key") { model.addTestKey() }
             #endif
         }
         .navigationTitle("Keys")

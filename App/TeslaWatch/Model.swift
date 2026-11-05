@@ -18,6 +18,8 @@ struct KeyProfile: Codable, Identifiable, Equatable {
     /// where the car moves the key you just used to the top.
     var lastCommandAt: Date?
     var lastCommand: String?
+    /// A simulated key from the phone build: commands "succeed" without touching Bluetooth or the car.
+    var isTest = false
 
     var vinTail: String { String(vin.suffix(6)) }
 }
@@ -33,6 +35,7 @@ extension KeyProfile {
         slot = try c.decode(String.self, forKey: .slot)
         lastCommandAt = try c.decodeIfPresent(Date.self, forKey: .lastCommandAt)
         lastCommand = try c.decodeIfPresent(String.self, forKey: .lastCommand)
+        isTest = try c.decodeIfPresent(Bool.self, forKey: .isTest) ?? false
     }
 }
 
@@ -143,16 +146,16 @@ final class CarModel: ObservableObject {
         return true
     }
 
-    /// For testing the swipe UI with one car: a second profile for the same VIN marked as paired. Its key is not
-    /// known to the car, so commands from it fail; it is only for looking at the pager.
+    /// For trying the UI without a car: a simulated key. Its commands and status reads succeed after a short delay and
+    /// never use Bluetooth; real keys never take this path.
     func addTestKey() {
         guard let vin = selected?.vin ?? profiles.first?.vin else { return }
-        let profile = KeyProfile(name: "Test key \(profiles.count + 1)", vin: vin, enrolled: true, slot: UUID().uuidString)
+        let profile = KeyProfile(name: "Test key \(profiles.count + 1)", vin: vin, enrolled: true, slot: UUID().uuidString, isTest: true)
         profiles.append(profile)
         selectedID = profile.id.uuidString
         save()
         clearVehicleState()
-        DebugLog.shared.add("App: added test key \"\(profile.name)\" (not known to the car)")
+        DebugLog.shared.add("App: added simulated test key \"\(profile.name)\"")
     }
 
     func select(_ id: UUID) {
@@ -226,12 +229,16 @@ final class CarModel: ObservableObject {
         busy = true // before any await, so a second tap can't slip in
         await stopPolling()
         await run("pair", success: false) {
-            let v = try self.makeVehicle()
-            try await v.enroll(onAwaitingApproval: {
-                Task { @MainActor in
-                    self.message = "Tap your key card on the console, then confirm on the car's screen."
-                }
-            })
+            if self.selected?.isTest == true {
+                try await Task.sleep(nanoseconds: 1_000_000_000)
+            } else {
+                let v = try self.makeVehicle()
+                try await v.enroll(onAwaitingApproval: {
+                    Task { @MainActor in
+                        self.message = "Tap your key card on the console, then confirm on the car's screen."
+                    }
+                })
+            }
             if let i = self.profiles.firstIndex(where: { $0.id == id }) {
                 self.profiles[i].enrolled = true
                 self.save()
@@ -247,8 +254,12 @@ final class CarModel: ObservableObject {
         activeAction = action
         await stopPolling()
         let failure = await run("\(action)", success: true) {
-            let v = try self.makeVehicle()
-            try await v.perform(action)
+            if self.selected?.isTest == true {
+                try await Task.sleep(nanoseconds: 800_000_000) // stands in for the car's reply
+            } else {
+                let v = try self.makeVehicle()
+                try await v.perform(action)
+            }
             switch action {
             case .lock: self.lockState = true
             case .unlock: self.lockState = false
@@ -311,6 +322,10 @@ final class CarModel: ObservableObject {
             TeslaLog.isMuted = !verbose
             defer { TeslaLog.isMuted = false }
             let id = self.selected?.id
+            if self.selected?.isTest == true {
+                self.simulateStatus()
+                return true
+            }
             do {
                 let status = try await self.makeVehicle().status()
                 guard self.selected?.id == id else { return true }
@@ -348,6 +363,14 @@ final class CarModel: ObservableObject {
         reconnecting = true
         defer { reconnecting = false }
         await pollOnce(verbose: true)
+    }
+
+    /// A simulated key keeps whatever state its commands set, starting from a locked car with everything shut.
+    private func simulateStatus() {
+        setReachable(true)
+        if lockState == nil { lockState = true }
+        if frunkOpen == nil { frunkOpen = false }
+        if trunkOpen == nil { trunkOpen = false }
     }
 
     private func setReachable(_ reachable: Bool) {
