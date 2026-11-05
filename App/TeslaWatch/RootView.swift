@@ -471,8 +471,6 @@ struct ControlsView: View {
                         // The lid starts moving only once the car has accepted the command; until then it waits.
                         CarLidIcon(open: lid, front: action == .openFrunk,
                                    animated: isCurrent && model.lidMotion == action, size: Metrics.tileSymbol)
-                            .opacity(model.activeAction == action ? 0.35 : 1)
-                            .overlay { if model.activeAction == action { ProgressView() } }
                     } else if model.activeAction == action {
                         ProgressView()
                     } else if let result {

@@ -330,12 +330,14 @@ final class CarModel: ObservableObject {
         return ok
     }
 
-    /// Polls until cancelled: every 5 seconds while the car answers, and only every 15 seconds while it is out of
-    /// range. Both stop when the screen goes away, and watchOS suspends the app soon after the wrist drops.
+    /// Polls until cancelled: every 5 seconds while the car answers (every 3 while the trunk or frunk is open, so you
+    /// see it close quickly), and only every 15 seconds while it is out of range. All stop when the screen goes away,
+    /// and watchOS suspends the app soon after the wrist drops.
     func pollLoop() async {
         while !Task.isCancelled {
             let ok = await pollOnce()
-            try? await Task.sleep(nanoseconds: (ok ? 5 : 15) * 1_000_000_000)
+            let open = frunkOpen == true || trunkOpen == true
+            try? await Task.sleep(nanoseconds: (ok ? (open ? 3 : 5) : 15) * 1_000_000_000)
         }
     }
 
