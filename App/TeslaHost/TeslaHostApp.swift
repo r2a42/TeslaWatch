@@ -6,7 +6,7 @@ import SwiftUI
 struct TeslaHostApp: App {
     var body: some Scene {
         WindowGroup {
-            Text("Watch Key Test runs on your Apple Watch. Open it from the watch home screen.")
+            Text("WatchKeyT runs on your Apple Watch. Open it from the watch home screen.")
                 .multilineTextAlignment(.center)
                 .padding()
         }

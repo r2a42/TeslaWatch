@@ -53,7 +53,7 @@ only a form factor), so the car lists these keys as "Phone Key".
 
 To name a key on the car: open **Controls > Locks** on the car's screen and send a command from the app.
 The car moves the key that was just used to the top of the list, and an edit button next to it lets you
-rename it (for example "Joe's Apple Watch - Watch Key Test"). The key's page in the app shows when a command
+rename it (for example "Joe's Apple Watch - WatchKeyT"). The key's page in the app shows when a command
 was last sent through it, to help match it to the car's list.
 
 ## What is and isn't verified

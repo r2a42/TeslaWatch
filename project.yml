@@ -19,11 +19,11 @@ targets:
     info:
       path: App/TeslaWatch/Info.plist
       properties:
-        CFBundleDisplayName: Watch Key Test
+        CFBundleDisplayName: WatchKeyT
         WKApplication: true
         ITSAppUsesNonExemptEncryption: false   # standard algorithms via Apple's CryptoKit only
         WKWatchOnly: true   # no companion code; the iOS host app only carries it
-        NSBluetoothAlwaysUsageDescription: Watch Key Test uses Bluetooth to connect to your vehicle so you can lock, unlock and open it from your watch.
+        NSBluetoothAlwaysUsageDescription: WatchKeyT uses Bluetooth to connect to your vehicle so you can lock, unlock and open it from your watch.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.r2a42.teslakey.watchkitapp
@@ -43,7 +43,7 @@ targets:
     info:
       path: App/TeslaHost/Info.plist
       properties:
-        CFBundleDisplayName: Watch Key Test
+        CFBundleDisplayName: WatchKeyT
         UILaunchScreen: {}
         LSApplicationLaunchProhibited: true   # watch-only container
         ITSWatchOnlyContainer: true

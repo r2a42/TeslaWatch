@@ -1,6 +1,6 @@
-# App Store listing: Watch Key Test
+# App Store listing: WatchKeyT
 
-**Name:** Watch Key Test  (30 chars max; no brand names)
+**Name:** WatchKeyT  (30 chars max; no brand names; matches the App Store Connect name)
 **Subtitle:** Vehicle key for Apple Watch  (30 chars max)
 **Category:** Utilities  (secondary: Lifestyle)
 **Price:** Free
@@ -14,7 +14,7 @@ A key for your vehicle on your Apple Watch. Made for family-managed watches with
 watch,key,car,vehicle,lock,unlock,trunk,bluetooth,family,kids,remote
 
 **Description:**
-Watch Key Test turns an Apple Watch into a Bluetooth key for a compatible vehicle, for getting things in and
+WatchKeyT turns an Apple Watch into a Bluetooth key for a compatible vehicle, for getting things in and
 out of it. It locks, unlocks and opens the trunk and frunk. It can't start or drive the vehicle.
 
 Built for family watches with no iPhone. If your child wears an Apple Watch set up through Family Setup and

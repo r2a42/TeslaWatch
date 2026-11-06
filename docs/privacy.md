@@ -1,8 +1,8 @@
-# Watch Key Test: Privacy Policy
+# WatchKeyT: Privacy Policy
 
 _Last updated: 2026-10-31_
 
-Watch Key Test is an Apple Watch app that connects to your vehicle over Bluetooth Low Energy so you can lock,
+WatchKeyT is an Apple Watch app that connects to your vehicle over Bluetooth Low Energy so you can lock,
 unlock and open it from your watch.
 
 ## What the app can do
