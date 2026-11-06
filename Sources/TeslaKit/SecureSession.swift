@@ -79,7 +79,7 @@ final class SecureSession {
         guard let tag = response.signatureData?.sessionInfoTag,
               try isValidSessionInfoTag(key: key, vin: vinData, challenge: challenge, encodedInfo: encodedInfo, tag: tag)
         else {
-            TeslaLog.log("Session: tag check failed. reply: \(response.logSummary); tag=\(response.signatureData?.sessionInfoTag?.hexPreview() ?? "none"); challenge=\(challenge.shortHex); info=\(encodedInfo.hexPreview())")
+            TeslaLog.log("Session: tag check failed. reply: \(response.logSummary); tag=\(response.signatureData?.sessionInfoTag?.logHex ?? "none"); challenge=\(challenge.shortHex); info=\(encodedInfo.logHex)")
             throw TeslaError.protocolError("session info authentication failed")
         }
 

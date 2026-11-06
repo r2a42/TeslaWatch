@@ -50,6 +50,14 @@ public enum TeslaError: Error, Equatable, LocalizedError {
         }
     }
 
+    /// Failures that can happen after the command was already sent, so the car may have acted anyway.
+    public var mayHaveReachedCar: Bool {
+        switch self {
+        case .timeout, .protocolError: return true
+        default: return false
+        }
+    }
+
     /// Faults that mean our session state is stale and a fresh handshake will likely fix it.
     var isSessionDesync: Bool {
         guard case .vehicleFault(let code) = self else { return false }

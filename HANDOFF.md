@@ -36,10 +36,11 @@ watches but no phones).
   Check `git status` before pulling.
 
 ## Verified vs not
-- Verified: protocol/crypto/wire tests pass on Linux (swift-crypto) and on the Mac (`swift test`, 18 tests,
-  0 failures). The full app compiles for the watchOS simulator in CI.
-- NOT verified: anything on a real watch or a real car (BLE scanning, handshake over BLE, Secure Enclave key,
-  pairing). Expect debugging there.
+- Verified in tests: protocol, crypto, wire codec and status parsing (`swift test`, 21 tests).
+- Verified on a real car through the iPhone build (TeslaPhone): BLE connect, handshake, pairing, lock, unlock,
+  trunk and frunk.
+- NOT verified: anything on a real watch, the Family Setup install path, multi-key pairing against a car,
+  polling battery cost, whether the stale-reply fix cured the occasional first-pair false failure.
 
 ## Mac environment (done)
 Xcode installed (build 27A9275), watchOS platform support downloaded, Homebrew and XcodeGen installed,
@@ -65,22 +66,17 @@ Developer Program account**.
   worked. Still unknown: did TSLA Keyfob and TCat appear and install on the watch, and where did they fail?
 
 ## Current state
-The user is trying the TestFlight route. In Xcode, Signing & Capabilities shows the expected development
-signing error ("Your team has no devices from which to generate a provisioning profile"). They tried
-Product > Archive with "Any watchOS Device" and the **build failed**. The error text has not been seen yet.
-
-Next command to run yourself from `~/TeslaWatch`:
-
-```sh
-xcodebuild archive -project TeslaWatch.xcodeproj -scheme TeslaWatch \
-  -destination 'generic/platform=watchOS' -archivePath ./build/TeslaWatch.xcarchive \
-  -allowProvisioningUpdates 2>&1 | grep -E "error:|ARCHIVE|BUILD" | head -20
-```
-
-Then fix whatever it reports (likely signing/team: set `DEVELOPMENT_TEAM` in `project.yml`, re-run
-`xcodegen`). If the archive succeeds: create the app record in App Store Connect (check which platform option a
-watch-only app needs; unverified), upload the archive, enable TestFlight, and have the organizer's iPhone
-install it through TestFlight to see if it reaches the watch.
+- The App Store submission (an older build, before most of the current code) is waiting for review. If it is
+  rejected, the plan is to resubmit with a demo video of the iPhone app and a screen recording of the watch app
+  in the simulator (a simulated key is already in the phone build; exposing it in the watch build is optional).
+- The app name in App Store Connect is **WatchKeyT**; the code and docs now use the same name.
+- Next submission: `CURRENT_PROJECT_VERSION` is 3 and `CFBundleVersion` now follows it; check it is higher than
+  anything already uploaded. `PrivacyInfo.xcprivacy` is included. Retake the store screenshots (they show an old UI).
+- Build and install on the phone: `xcodebuild -project TeslaWatch.xcodeproj -scheme TeslaPhone -destination
+  'generic/platform=iOS' -allowProvisioningUpdates build`, then `xcrun devicectl device install app --device
+  <udid> <built TeslaPhone.app>`. The phone must be unlocked and on the home Wi-Fi.
+- The log (Settings > Log) hides raw message bytes unless "Raw bytes in log" is on (on by default in the phone
+  build only).
 
 ## Recommended order and advice already given to the user
 1. Don't spend more until the watch's own App Store test is done: do TSLA Keyfob and TCat show up and install?
@@ -96,14 +92,12 @@ install it through TestFlight to see if it reaches the watch.
 - Enrolling a key adds it to the car's key list. Removal is done in the car under Controls > Locks.
 - Don't present untested BLE or pairing behavior as working.
 
-## TODO on the next build
-- Add `ITSAppUsesNonExemptEncryption` to both targets' Info.plist properties in `project.yml` (TeslaWatch and
-  TeslaHost), set to match the answer given in App Store Connect's export compliance questions (standard
-  algorithms via Apple's OS: AES-GCM, P-256 through CryptoKit). This stops the compliance prompt on every build.
-- The France encryption question is likely settled by the same key when the app is exempt. That is unverified:
-  check what App Store Connect asks for France before relying on it.
-- Replace the placeholder app icon (generated key shape) before any public release.
-- Uncommitted: `project.yml`, `App/TeslaHost`, both `Assets.xcassets`, `HANDOFF.md`. `build/` should not be committed.
+## Open items
+- Polling opens a new BLE connection every 3 to 5 seconds while the screen is on; measure battery on a real
+  watch and consider keeping one link open.
+- A signed-message error that carries an information code is not parsed (the app waits for the 10 s timeout).
+- Keychain items use `AfterFirstUnlockThisDeviceOnly`; consider requiring a passcode.
+- Consider a protocol around `BLETransport` so `VehicleLink` reply handling can be unit tested.
 
 ## Scope (stated by the owner)
 The app is for retrieving things from the car (lock, unlock, trunk, frunk). It must not drive the car: no

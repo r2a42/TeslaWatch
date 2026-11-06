@@ -24,6 +24,14 @@ struct KeyProfile: Codable, Identifiable, Equatable {
     var vinTail: String { String(vin.suffix(6)) }
 }
 
+/// Decodes one saved key, or nil if that entry is damaged, so a single bad entry doesn't hide all the others.
+private struct LossyProfile: Decodable {
+    let profile: KeyProfile?
+    init(from decoder: Decoder) throws {
+        profile = try? KeyProfile(from: decoder)
+    }
+}
+
 extension KeyProfile {
     /// Tolerates missing fields so a profile saved by an older or newer build still loads.
     init(from decoder: Decoder) throws {
@@ -38,6 +46,13 @@ extension KeyProfile {
         isTest = try c.decodeIfPresent(Bool.self, forKey: .isTest) ?? false
     }
 }
+
+/// Raw message bytes in the log are on by default only in the iPhone test build.
+#if os(iOS)
+let detailedLogDefault = true
+#else
+let detailedLogDefault = false
+#endif
 
 @MainActor
 final class CarModel: ObservableObject {
@@ -75,9 +90,11 @@ final class CarModel: ObservableObject {
 
     private var vehicle: TeslaVehicle?
     private var pollInFlight: Task<Bool, Never>?
+    private var failedReads = 0
 
     init() {
         _ = DebugLog.shared
+        TeslaLog.detailed = UserDefaults.standard.object(forKey: "detailedLog") as? Bool ?? detailedLogDefault
         load()
     }
 
@@ -93,8 +110,13 @@ final class CarModel: ObservableObject {
     var vin: String { selected?.vin ?? "" }
 
     private func load() {
-        if let data = profilesJSON.data(using: .utf8), let decoded = try? JSONDecoder().decode([KeyProfile].self, from: data) {
-            profiles = decoded
+        if let data = profilesJSON.data(using: .utf8), let decoded = try? JSONDecoder().decode([LossyProfile].self, from: data) {
+            // One unreadable entry is skipped; the other keys still load.
+            profiles = decoded.compactMap(\.profile)
+            if profiles.count < decoded.count {
+                DebugLog.shared.add("App: skipped \(decoded.count - profiles.count) unreadable key(s)")
+                profilesBackup = profilesJSON
+            }
         } else if !profilesJSON.isEmpty {
             // Don't overwrite what we can't read: keep a copy and start empty rather than wiping the keys.
             DebugLog.shared.add("App: could not read saved keys; kept a backup")
@@ -124,6 +146,7 @@ final class CarModel: ObservableObject {
         frunkOpen = nil
         trunkOpen = nil
         carReachable = nil
+        failedReads = 0
         message = nil
     }
 
@@ -142,7 +165,7 @@ final class CarModel: ObservableObject {
         selectedID = profile.id.uuidString
         save()
         clearVehicleState()
-        DebugLog.shared.add("App: added key \"\(name)\" (VIN ending \(profile.vinTail))")
+        DebugLog.shared.add("App: added key \"\(name)\" (VIN ending \(profile.vin.suffix(4)))")
         return true
     }
 
@@ -291,6 +314,10 @@ final class CarModel: ObservableObject {
             let settle: UInt64 = (action == .openTrunk || action == .openFrunk) ? 4_000_000_000 : 500_000_000
             try? await Task.sleep(nanoseconds: settle)
             await pollOnce()
+        } else if let failure = failure as? TeslaError, failure.mayHaveReachedCar {
+            // The car may have acted even though we never saw its reply; show what it is really doing.
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            await pollOnce()
         }
     }
 
@@ -308,6 +335,7 @@ final class CarModel: ObservableObject {
     /// Ends any status poll in flight so a command or pairing gets the car's Bluetooth connection straight away.
     private func stopPolling() async {
         guard let poll = pollInFlight else { return }
+        poll.cancel() // also catches a read that hasn't opened its link yet
         vehicle?.cancel()
         _ = await poll.value
     }
@@ -329,13 +357,17 @@ final class CarModel: ObservableObject {
             do {
                 let status = try await self.makeVehicle().status()
                 guard self.selected?.id == id else { return true }
+                self.failedReads = 0
                 self.setReachable(true)
                 self.apply(status)
                 return true
             } catch TeslaError.cancelled {
                 return true // a command took over; not a failure
             } catch {
-                self.setReachable(false)
+                // One failed read while the car was answering is often just a busy radio; keep the buttons
+                // until a second one fails. Before the first success, report it straight away.
+                self.failedReads += 1
+                if self.carReachable != true || self.failedReads >= 2 { self.setReachable(false) }
                 return false
             }
         }

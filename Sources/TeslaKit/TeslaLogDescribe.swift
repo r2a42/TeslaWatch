@@ -8,6 +8,9 @@ extension Data {
         return count > limit ? shown + "...(+\(count - limit)B)" : shown
     }
 
+    /// Raw bytes for a log line, only when detailed logging is on.
+    var logHex: String { TeslaLog.detailed ? hexPreview() : "(\(count)B, hidden)" }
+
     var shortHex: String { isEmpty ? "-" : prefix(4).map { String(format: "%02x", $0) }.joined() }
 }
 

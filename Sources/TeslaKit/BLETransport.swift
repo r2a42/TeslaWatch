@@ -19,7 +19,6 @@ final class BLETransport: NSObject {
     private var readChar: CBCharacteristic?
     private var targetName = ""
     private var disconnected = false
-    private var seenNames = Set<String>()
 
     private var frames = BLEFrameBuffer()
     private var inbox = [Data]()
@@ -41,7 +40,7 @@ final class BLETransport: NSObject {
                     return
                 }
                 self.targetName = advertisedName
-                TeslaLog.log("BLE: scanning for \(advertisedName)")
+                TeslaLog.log("BLE: scanning for the car")
                 self.connectContinuation = cont
                 let timer = DispatchWorkItem { [weak self] in
                     guard let self else { return }
@@ -168,9 +167,6 @@ extension BLETransport: CBCentralManagerDelegate {
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
                         advertisementData: [String: Any], rssi RSSI: NSNumber) {
         let name = (advertisementData[CBAdvertisementDataLocalNameKey] as? String) ?? peripheral.name
-        if let name, name.count == 18, name.hasPrefix("S"), seenNames.insert(name).inserted, seenNames.count <= 10 {
-            TeslaLog.log("BLE: saw vehicle-like name \(name), rssi \(RSSI)")
-        }
         guard name == targetName, self.peripheral == nil else { return }
         TeslaLog.log("BLE: found target, rssi \(RSSI); connecting")
         central.stopScan()

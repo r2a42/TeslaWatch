@@ -240,8 +240,8 @@ struct SessionInfo: Equatable {
 
 // MARK: - vcsec.proto
 
+/// Only the driver role is used: it can operate the car but can't add or remove other keys.
 enum KeyRole: UInt64 {
-    case owner = 2
     case driver = 3
 }
 
@@ -256,7 +256,6 @@ enum KeyFormFactor: UInt64 {
 enum RKEAction: UInt64 {
     case unlock = 0
     case lock = 1
-    case wakeVehicle = 30
 }
 
 enum ClosureMoveType: UInt64 {
@@ -414,7 +413,8 @@ struct FromVCSECMessage: Equatable {
                 }
             case 2:
                 if let raw = value.uint64, let state = LockState(rawValue: raw) {
-                    locked = (state != .unlocked)
+                    // Selective unlock leaves the driver's door unlocked, so only the fully locked states count as locked.
+                    locked = (state == .locked || state == .internalLocked)
                 }
             default: break
             }

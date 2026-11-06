@@ -20,8 +20,9 @@ public final class TeslaVehicle {
     private var cancelRequested = false
     private let key: ClientKey
 
-    /// Hard cap on one connect + handshake + command round trip.
-    private let commandDeadline: TimeInterval = 20
+    /// Hard cap on one connect + handshake + command round trip. Longer than the steps' own limits added together
+    /// (10 s connect, 5 s handshake, 10 s reply) so the steps time out with their own messages first.
+    private let commandDeadline: TimeInterval = 28
 
     public init(vin: String, key: ClientKey) throws {
         let normalized = vin.uppercased().trimmingCharacters(in: .whitespacesAndNewlines)
@@ -75,12 +76,12 @@ public final class TeslaVehicle {
     /// console and confirms on the car's screen. Completes once the car trusts the key.
     ///
     /// - Parameter onAwaitingApproval: called once the request has been sent.
-    public func enroll(role: EnrollmentRole = .driver, timeout: TimeInterval = 90,
+    public func enroll(timeout: TimeInterval = 90,
                        onAwaitingApproval: @escaping @Sendable () -> Void = {}) async throws {
         try await withLink(deadline: timeout + 15) { link in
             let started = Date()
             func elapsed() -> String { String(format: "+%.1fs", Date().timeIntervalSince(started)) }
-            TeslaLog.log("Enroll: start (role \(role), timeout \(Int(timeout))s)")
+            TeslaLog.log("Enroll: start (timeout \(Int(timeout))s)")
             do {
                 try await link.handshake()
                 TeslaLog.log("Enroll: already enrolled, nothing to do")
@@ -91,7 +92,7 @@ public final class TeslaVehicle {
 
             let request = UnsignedMessage.addKeyRequest(
                 publicKey: self.key.publicKey,
-                role: role == .owner ? .owner : .driver,
+                role: .driver,
                 formFactor: .iosDevice)
             try await link.transport.send(request)
             TeslaLog.log("Enroll: add-key request sent (\(request.count)B) \(elapsed()); waiting for card tap and car confirmation")
@@ -126,11 +127,6 @@ public final class TeslaVehicle {
         }
     }
 
-    public enum EnrollmentRole {
-        case driver
-        case owner
-    }
-
     // MARK: Plumbing
 
     /// Drops the current connection so a stuck operation, such as waiting for pairing approval, ends now.
@@ -143,36 +139,62 @@ public final class TeslaVehicle {
         link?.transport.disconnect()
     }
 
-    private func withLink<T>(deadline: TimeInterval, _ body: (VehicleLink) async throws -> T) async throws -> T {
-        let link = VehicleLink(vin: vin, key: key)
+    /// Records the link in use and clears any earlier cancel request. Kept out of the async code so the lock is
+    /// never held across a suspension point.
+    private func setActive(_ link: VehicleLink?) {
         activeLock.lock()
-        cancelRequested = false
+        if link != nil { cancelRequested = false }
         activeLink = link
         activeLock.unlock()
+    }
+
+    private func cancelWasRequested() -> Bool {
+        activeLock.lock()
+        defer { activeLock.unlock() }
+        return cancelRequested
+    }
+
+    /// Set by the watchdog so a deadline that cuts the connection is reported as a timeout, not "disconnected".
+    private final class DeadlineFlag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var fired = false
+        func fire() { lock.lock(); fired = true; lock.unlock() }
+        var isFired: Bool { lock.lock(); defer { lock.unlock() }; return fired }
+    }
+
+    private func withLink<T>(deadline: TimeInterval, _ body: (VehicleLink) async throws -> T) async throws -> T {
+        // A caller that cancelled this task before the link started (for example a command taking over from a
+        // status read) must not have the read run to completion.
+        if Task.isCancelled { throw TeslaError.cancelled }
+        let link = VehicleLink(vin: vin, key: key)
+        setActive(link)
+        let deadlineFlag = DeadlineFlag()
         let watchdog = Task {
             try? await Task.sleep(nanoseconds: UInt64(deadline * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            deadlineFlag.fire()
             link.transport.disconnect()
         }
         defer {
             watchdog.cancel()
             link.transport.disconnect()
-            activeLock.lock()
-            activeLink = nil
-            activeLock.unlock()
+            setActive(nil)
         }
         TeslaLog.log("Vehicle: opening link")
         do {
             try await link.connect()
+            if Task.isCancelled { throw TeslaError.cancelled }
             let result = try await body(link)
             TeslaLog.log("Vehicle: done")
             return result
         } catch {
-            activeLock.lock()
-            let wasCancelled = cancelRequested
-            activeLock.unlock()
-            if wasCancelled {
+            if cancelWasRequested() || Task.isCancelled {
                 TeslaLog.log("Vehicle: cancelled (underlying: \(error.localizedDescription))")
                 throw TeslaError.cancelled
+            }
+            if deadlineFlag.isFired {
+                TeslaLog.log("Vehicle: deadline reached (underlying: \(error.localizedDescription))")
+                throw TeslaError.timeout
             }
             TeslaLog.log("Vehicle: failed: \(error.localizedDescription) [\(error)]")
             throw error
@@ -224,10 +246,10 @@ final class VehicleLink {
             guard remaining > 0 else { throw TeslaError.timeout }
             let raw = try await transport.receive(timeout: remaining)
             guard let message = try? RoutableMessage(serialized: raw) else {
-                TeslaLog.log("Vehicle: rx \(raw.count)B undecodable: \(raw.hexPreview())")
+                TeslaLog.log("Vehicle: rx \(raw.count)B undecodable: \(raw.logHex)")
                 continue
             }
-            TeslaLog.log("Vehicle: rx \(raw.count)B \(message.logSummary) hex=\(raw.hexPreview())")
+            TeslaLog.log("Vehicle: rx \(raw.count)B \(message.logSummary) hex=\(raw.logHex)")
             guard message.to?.routingAddress == routingAddress else {
                 TeslaLog.log("Vehicle: skipped (not addressed to this client)")
                 continue
@@ -340,7 +362,7 @@ final class VehicleLink {
             let reply = try await nextReply(timeout: 5)
             if let fault = reply.status?.fault, fault != 0 { throw TeslaError.vehicleFault(fault) }
             guard let fromVCSEC = try? FromVCSECMessage(serialized: reply.messageBytes) else { continue }
-            TeslaLog.log("Vehicle: status reply: \(fromVCSEC.logSummary) hex=\(reply.messageBytes.hexPreview())")
+            TeslaLog.log("Vehicle: status reply: \(fromVCSEC.logSummary) hex=\(reply.messageBytes.logHex)")
             try Self.checkForError(fromVCSEC)
             if let status = fromVCSEC.vehicleStatus { return status }
         }

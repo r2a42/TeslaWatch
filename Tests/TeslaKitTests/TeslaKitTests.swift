@@ -219,6 +219,14 @@ final class TeslaKitTests: XCTestCase {
         XCTAssertFalse(status.frunkOpen, "UNKNOWN is not open")
     }
 
+    func testSelectiveUnlockIsNotLocked() throws {
+        // vehicleStatus { lockState = SELECTIVE_UNLOCKED (3) } and, separately, LOCKED (1)
+        let selective = try XCTUnwrap(FromVCSECMessage(serialized: Data(hex: "0a0210" + "03")).vehicleStatus)
+        XCTAssertEqual(selective.isLocked, false)
+        let locked = try XCTUnwrap(FromVCSECMessage(serialized: Data(hex: "0a021001")).vehicleStatus)
+        XCTAssertEqual(locked.isLocked, true)
+    }
+
     func testFromVCSECParsing() throws {
         XCTAssertEqual(try FromVCSECMessage(serialized: Data(hex: Golden.fromVcsecWait)).commandStatus?.operationStatus, .wait)
         let wl = try FromVCSECMessage(serialized: Data(hex: Golden.fromVcsecWlOk)).commandStatus?.whitelistOperationStatus

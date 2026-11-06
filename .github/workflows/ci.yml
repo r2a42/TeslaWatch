@@ -25,3 +25,17 @@ jobs:
             -scheme TeslaWatch \
             -destination 'generic/platform=watchOS Simulator' \
             CODE_SIGNING_ALLOWED=NO
+      - name: Build the iPhone test app for the simulator
+        run: |
+          xcodebuild build \
+            -project TeslaWatch.xcodeproj \
+            -scheme TeslaPhone \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO
+      - name: Build the iOS container app for the simulator
+        run: |
+          xcodebuild build \
+            -project TeslaWatch.xcodeproj \
+            -scheme TeslaHost \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO

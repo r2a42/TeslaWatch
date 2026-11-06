@@ -29,6 +29,7 @@ private struct CarLidIcon: View {
     /// Only animate a change that comes from a command the car accepted, never from switching keys or a status read.
     var animated = false
     let size: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// The whole car as one shape, drawn on a 100 x 43 grid (ground at y = 41.5) and scaled to fit.
     /// `angle` is how far the lid has swung, in radians.
@@ -135,32 +136,40 @@ private struct CarLidIcon: View {
 
         func skin(_ seg: Int, _ t: CGFloat) -> CGPoint { Self.bezier(Self.skin[seg], t) }
 
+        // Everything that doesn't move is built once. Boolean path operations are costly, and the animation redraws
+        // this shape every frame, so each frame does only one: joining the turned lid to the cached body.
+        private static let frontSpans: [(Int, CGFloat, CGFloat)] = [(2, 0.04, 1)]            // hood top only
+        private static let rearSpans: [(Int, CGFloat, CGFloat)] = [(4, 0.61, 1), (5, 0, 1), (6, 0, 0.93)] // liftgate
+        private static let frontSheet = sheet(frontSpans)
+        private static let rearSheet = sheet(rearSpans)
+        private static let frontHinge = bezier(skin[2], 1)
+        private static let rearHinge = bezier(skin[4], 0.61)
+        private static let wheelRings: Path = {
+            var rings = Path()
+            for cx in wheels {
+                let c = CGPoint(x: cx, y: wheelY)
+                rings = rings.union(disc(c, tire).subtracting(disc(c, 4.3)).union(disc(c, 3.0)))
+            }
+            return rings
+        }()
+        /// The car with its lids shut (also the body under the hood plate), and with the liftgate's slot cut out.
+        private static let closedBody = silhouette.subtracting(windows).union(wheelRings)
+        private static let rearOpenBody = silhouette.subtracting(sheet(rearSpans, out: 0.5)).subtracting(windows)
+            .union(wheelRings)
+
         func path(in r: CGRect) -> Path {
             // Each lid is a thin sheet of the car's own skin (see `sheet`). The body keeps the exact slot it leaves,
             // so the two fit back together like puzzle pieces.
-            let spans: [(Int, CGFloat, CGFloat)], hinge: CGPoint, turn: Double
-            if front {
-                spans = [(2, 0.04, 1)]                          // hood top only: front edge back to the windshield base
-                hinge = skin(2, 1)
-                turn = angle // clockwise on screen: the nose end rises
-            } else {
-                spans = [(4, 0.61, 1), (5, 0, 1), (6, 0, 0.93)] // liftgate: top rear of the roof down to the bumper
-                hinge = skin(4, 0.61)
-                turn = -angle // anticlockwise on screen: the lower edge swings up and back
-            }
-            let body = Self.silhouette
-            let sheet = Self.sheet(spans)
+            let sheet = front ? Self.frontSheet : Self.rearSheet
+            let hinge = front ? Self.frontHinge : Self.rearHinge
+            // Clockwise on screen for the hood (the nose end rises), anticlockwise for the liftgate.
+            let turn = front ? angle : -angle
             let lid = sheet.applying(CGAffineTransform(translationX: -hinge.x, y: -hinge.y)
                 .concatenating(CGAffineTransform(rotationAngle: turn))
                 .concatenating(CGAffineTransform(translationX: hinge.x, y: hinge.y)))
             // Closed, the car is one piece with no seam. As the liftgate moves, its slot in the body shows; the hood
             // is a plate lying on the hood, so the body under it stays whole.
-            var car = angle > 0.001 && !front ? body.subtracting(Self.sheet(spans, out: 0.5)) : body
-            car = car.subtracting(Self.windows).union(lid)
-            for cx in Self.wheels {
-                let c = CGPoint(x: cx, y: Self.wheelY)
-                car = car.union(Self.disc(c, Self.tire).subtracting(Self.disc(c, 4.3)).union(Self.disc(c, 3.0)))
-            }
+            let car = (angle > 0.001 && !front ? Self.rearOpenBody : Self.closedBody).union(lid)
             let k = min(r.width / 100, r.height / 43)
             return car.applying(CGAffineTransform(scaleX: k, y: k)
                 .concatenating(CGAffineTransform(translationX: r.midX - 50 * k, y: r.midY - 21.5 * k)))
@@ -171,7 +180,8 @@ private struct CarLidIcon: View {
         CarShape(angle: open ? (front ? 0.96 : 1.13) : 0, front: front)
             .fill()
             .frame(width: size * 2.1, height: size * 0.9)
-            .animation(animated ? .easeInOut(duration: 3.5) : nil, value: open)
+            .animation(animated && !reduceMotion ? .easeInOut(duration: 3.5) : nil, value: open)
+            .accessibilityHidden(true)
     }
 }
 
@@ -209,7 +219,9 @@ private struct SettingsGear: ToolbarContent {
 
     var body: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
-            NavigationLink { SettingsView(model: model) } label: { Image(systemName: "gearshape.fill") }
+            NavigationLink { SettingsView(model: model) } label: {
+                Image(systemName: "gearshape.fill").accessibilityLabel("Settings")
+            }
         }
     }
 }
@@ -232,7 +244,11 @@ private struct KeyHeader: View {
                         .frame(width: 6, height: 6)
                 }
             }
+            .accessibilityHidden(true)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title), key \((model.profiles.firstIndex(of: profile) ?? 0) + 1) of \(model.profiles.count)")
+        .accessibilityHint("Swipe sideways to change key")
     }
 }
 
@@ -442,6 +458,9 @@ struct ControlsView: View {
         .contentShape(Rectangle())
         .animation(.default, value: lockState)
         .onTapGesture { Task { await model.pollOnce() } }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Refreshes the car's state")
     }
 
     private func statusText(locked: Bool) -> String {
@@ -494,11 +513,19 @@ struct ControlsView: View {
         .tint(tint)
         #endif
         .animation(.easeInOut(duration: 0.2), value: model.feedback)
+        .accessibilityLabel(title)
+        .accessibilityValue(accessibilityResult(result))
+    }
+
+    private func accessibilityResult(_ result: CarModel.ActionFeedback?) -> String {
+        guard let result else { return "" }
+        return result.succeeded ? "Done" : "Failed"
     }
 }
 
 struct SettingsView: View {
     @ObservedObject var model: CarModel
+    @AppStorage("detailedLog") private var detailedLog = detailedLogDefault
     @AppStorage("skipFrunkWarning") private var skipFrunkWarning = false
 
     var body: some View {
@@ -506,6 +533,8 @@ struct SettingsView: View {
             NavigationLink("Keys") { KeysView(model: model) }
             Toggle("Frunk alert", isOn: Binding(get: { !skipFrunkWarning }, set: { skipFrunkWarning = !$0 }))
             NavigationLink("Log") { LogView() }
+            Toggle("Raw bytes in log", isOn: $detailedLog)
+                .onChange(of: detailedLog) { _, on in TeslaLog.detailed = on }
         }
     }
 }
