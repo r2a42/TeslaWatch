@@ -2,35 +2,33 @@ Reply to App Review, Guidelines 4.3 and 4.2.6 (WatchKeyT, com.r2a42.teslakey)
 
 Hello,
 
-I have uploaded a new build (build 3) and selected it for this submission. It adds a diagnostic log, named keys with swiping between them, automatic status refresh, a fix for a lock-state bug, and the other changes described in answer 4.
-
-I believe WatchKeyT meets guidelines 4.3(a), 4.3(b) and 4.2.6, so I am replying instead of resubmitting. Answers below, in order.
+I believe WatchKeyT meets guidelines 4.3(a), 4.3(b) and 4.2.6, so I am replying and not resubmitting, as your message asks. My answers are below, in order. A demo video is attached, because the app cannot be exercised without a car.
 
 1. What the app does
-WatchKeyT is a standalone Apple Watch app that lets the owner's family member lock and unlock a Tesla Model Y and open its trunk and frunk. It talks directly to the car over Bluetooth Low Energy using Tesla's published Vehicle Command Protocol. The watch holds its own private key in the Secure Enclave. The owner pairs that key once by tapping their key card on the car's center console, after which the watch can send signed commands to the car. There is no iPhone companion in normal use, no Tesla account sign-in, no cloud service and no server of mine. The app does not start or drive the car. It is only for getting things out of the car (bags in the trunk, a stroller in the frunk) and locking up. The project is open source: https://github.com/r2a42/TeslaWatch
+WatchKeyT is a standalone Apple Watch app that lets a family member lock and unlock a Tesla and open its trunk and frunk. It talks directly to the car over Bluetooth Low Energy using Tesla's published Vehicle Command Protocol. The watch creates its own private key in the Secure Enclave. The owner pairs that key once by tapping their key card on the car's center console, and after that the watch can send signed commands to the car. There is no iPhone companion app, no Tesla account sign-in, no cloud service and no server of mine. The app has no command to start or drive the car. It is for getting things out of the car, such as bags from the trunk, and locking up afterwards. The source code is public: https://github.com/r2a42/TeslaWatch
 
 2. Intended user
-The immediate user is my child, who wears a Family Setup Apple Watch and has no iPhone of their own. More broadly: anyone who owns a Tesla and wants a watch that works as a simple car key for a person who cannot or does not want to run the Tesla phone app, such as children on managed watches or people who leave their phone behind.
+The first user is my child, who wears a Family Setup Apple Watch and has no iPhone. More broadly, it is for Tesla owners who want to give a watch wearer access to the car's contents when that person cannot or should not use the Tesla phone app: children on managed watches, and family members who should be able to fetch something from the car but not drive it.
 
 3. Gap in the market
-What makes WatchKeyT unique is its deliberately limited scope: it gives access to the things in the car without letting anyone drive it. It can lock, unlock and open the trunk and frunk, and it has no start, remote-drive or keyless-driving command. That makes it safe to hand to a child, a house guest or a valet-style helper who needs to fetch or stow something but must never be able to take the car. A full phone key cannot be limited this way. To my knowledge, the Tesla app's watch support depends on a paired iPhone running the Tesla app signed in to a Tesla account, and it is not designed for Family Setup. A child's Family Setup watch cannot sign in to a Tesla account or share the owner's login safely. WatchKeyT gives that watch its own revocable key, listed on the car's own Locks screen, so the owner can remove it at any time from the car. It also needs no internet connection, which matters in underground garages and on trails where the car has no cell service.
+What makes WatchKeyT different is its deliberately limited scope: it gives access to the things in the car without being a way to drive it. It sends only four commands (lock, unlock, open trunk, open frunk) and contains no start, remote-drive or keyless-driving command. To my knowledge, Tesla's own Apple Watch support depends on an iPhone running the Tesla app signed in to a Tesla account, and a Family Setup watch has neither. I have not found another App Store app that works on a Family Setup watch with no phone and no account. WatchKeyT gives that watch its own key, which appears on the car's Locks screen and can be removed there by the owner at any time. It also needs no internet connection, so it works in garages and other places with no signal.
 
 4. Beta testing
-I have not run an external beta. I tested as the owner, on my own 2021 Model Y, using an iPhone build that shares the same SwiftUI and protocol code as the watch app. I tested pairing, connect and handshake, lock, unlock, trunk and frunk. The build I originally submitted (build 2) predates most of this testing. I have uploaded build 3 with this reply, which includes the following changes that came from it: a lock-state parsing bug that left the status stuck on "Checking" after unlocking (fixed); inconsistent trunk button labels (fixed); lid animations starting before the car acknowledged the command (now they wait for the car's reply); the dimming and spinner during commands (removed); and trunk and frunk state now polling every few seconds while open. Testing on the child's physical Family Setup watch is still outstanding. A Family Setup watch has no Apple ID of its own and is managed from my iPhone, and I have not found a way to install or test a pre-release build on one, so the App Store release is how it will reach the watch. I have no other Apple Watch to test on. I can attach a screen recording of the iPhone build against the car and a watch simulator recording.
+I have not run an external beta, and I want to be accurate about what was tested when. Before submitting, I tested the protocol code with unit tests and the app in the watchOS simulator. After submitting, I tested on my own 2021 Model Y using an iPhone build of the same code: pairing, connecting, lock, unlock, trunk and frunk all work against the real car. That testing was by me and my family, and it led to changes that are not in the build you have (build 2): a fix for a lock-status display bug, clearer trunk and frunk labels, automatic status refresh, named keys, and a diagnostic log. Those are ready in a newer build, which I can submit now or as an update, whichever you prefer. I have not been able to test on the Family Setup watch itself. It has no Apple ID of its own, I have not found a way to install a pre-release build on it, and I have no other Apple Watch.
 
 5. Standalone or suite
-Standalone. The only other app target in this project is the required iOS container for a watch-only app, and it has no functionality of its own. This is the only app on my developer account; I have no other published apps.
+Standalone. This is the only app on my developer account. The iOS app in the bundle is only the container that a watch-only app requires, and it has no functionality of its own.
 
-6. Could this be an IAP or feature in another app of mine
-No. This is the only app on my developer account, so there is nothing to consolidate it into.
+6. Could this be an in-app purchase or feature of another app of mine
+No. I have no other apps, so there is nothing to consolidate it into.
 
 7. Shared code or assets with other apps of mine
-No. I have no other apps. Within this project, the iOS container shares only the app icon with the watch app.
+No. I have no other apps.
 
 8. Shared code with third-party apps
-No third-party SDKs. The Bluetooth and protocol layer (TeslaKit) is my own implementation, written against Tesla's public documentation at https://github.com/teslamotors/vehicle-command, using only Apple's CryptoKit and CoreBluetooth.
+No. The app uses no third-party SDKs or libraries. The Bluetooth and protocol layer is my own implementation, written against Tesla's public protocol documentation (https://github.com/teslamotors/vehicle-command) using only Apple's CryptoKit and CoreBluetooth frameworks.
 
 9. Client or third party
-No. I own the car, wrote the app, and am submitting it under my own account. It was not built from a template or app generation service. I am not affiliated with Tesla and the app says so.
+No. I own the car, the app is my own project, and I am submitting it under my own account. It was not built from a template or an app generation service. I am not affiliated with Tesla, and the App Store description says so.
 
-Thank you for the review. If it would help, I can supply a demo video or a test build.
+Thank you for your time. I am happy to provide anything else that would help, including a longer video or the newer build.
