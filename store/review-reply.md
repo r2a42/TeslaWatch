@@ -26,7 +26,7 @@ No. I don't have any other apps.
 No. I don't have any other apps.
 
 8. Shared code with third-party apps
-No. There are no third-party SDKs. I wrote the Bluetooth and protocol code from Tesla's public documentation (https://github.com/teslamotors/vehicle-command). It only uses Apple's CryptoKit and CoreBluetooth.
+No. There are no third-party SDKs. The Bluetooth and protocol code was written for this app from Tesla's public documentation (https://github.com/teslamotors/vehicle-command). It only uses Apple's CryptoKit and CoreBluetooth.
 
 9. Made for a client or third party
 No. It's my car and my project, and it's on my own account. It's not from a template or an app builder. I'm not affiliated with Tesla, and the description says so.
