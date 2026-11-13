@@ -17,13 +17,13 @@ What makes WatchKeyT unique is its deliberately limited scope: it gives access t
 I have not run an external beta. I tested as the owner, on my own 2021 Model Y, using an iPhone build that shares the same SwiftUI and protocol code as the watch app. I tested pairing, connect and handshake, lock, unlock, trunk and frunk. Feedback from that testing that went into the build: a lock-state parsing bug that left the status stuck on "Checking" after unlocking (fixed); inconsistent trunk button labels (fixed); lid animations starting before the car acknowledged the command (now they wait for the car's reply); the dimming and spinner during commands (removed); and trunk and frunk state now polling every few seconds while open. Testing on the child's physical Family Setup watch is still outstanding because the app is not yet installable there. I can attach a screen recording of the iPhone build against the car and a watch simulator recording.
 
 5. Standalone or suite
-Standalone. The only other app target in this project is the required iOS container for a watch-only app, and it has no functionality of its own. [CONFIRM: if your developer account has any other published apps, say they are unrelated to this one.]
+Standalone. The only other app target in this project is the required iOS container for a watch-only app, and it has no functionality of its own. This is the only app on my developer account; I have no other published apps.
 
 6. Could this be an IAP or feature in another app of mine
-No. [CONFIRM: no other app of mine does anything related to vehicles.]
+No. This is the only app on my developer account, so there is nothing to consolidate it into.
 
 7. Shared code or assets with other apps of mine
-No. The iOS container shares the app icon with the watch app, and that is all. [CONFIRM against your other apps, if any.]
+No. I have no other apps. Within this project, the iOS container shares only the app icon with the watch app.
 
 8. Shared code with third-party apps
 No third-party SDKs. The Bluetooth and protocol layer (TeslaKit) is my own implementation, written against Tesla's public documentation at https://github.com/teslamotors/vehicle-command, using only Apple's CryptoKit and CoreBluetooth.
