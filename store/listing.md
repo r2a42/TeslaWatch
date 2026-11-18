@@ -14,7 +14,7 @@ A door key for your vehicle that can't start or drive it. Works over Bluetooth f
 
 **Keywords (100 chars max):**
 watch,key,car,vehicle,lock,unlock,trunk,frunk,bluetooth,family,remote
-(No "kids": guideline 1.3 bars wording that implies children are the main audience outside the Kids category.)
+(No "kids": as I recall guideline 1.3, apps outside the Kids category shouldn't imply children are the main audience. Not re-read; the wording is safe either way.)
 
 **Description:** see store/paste/description.txt (the text saved in App Store Connect on 2026-11-18). It is written to be true of both build 2 and build 3.
 
