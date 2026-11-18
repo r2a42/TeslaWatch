@@ -77,7 +77,7 @@ targets:
     info:
       path: App/TeslaPhone/Info.plist
       properties:
-        CFBundleDisplayName: Key Test Phone
+        CFBundleDisplayName: WatchKeyT
         UILaunchScreen: {}
         NSBluetoothAlwaysUsageDescription: Uses Bluetooth to connect to your vehicle so you can test lock and unlock.
     settings:
