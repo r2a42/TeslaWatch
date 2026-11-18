@@ -1,7 +1,7 @@
 # App Store listing: WatchKeyT
 
 **Name:** WatchKeyT  (30 chars max; no brand names; matches the App Store Connect name)
-**Subtitle:** Vehicle key for Apple Watch  (30 chars max)
+**Subtitle:** Car key for your wrist  (30 chars max; no Apple product names, App Review flagged "Apple Watch" here under 5.2.5)
 **Category:** Utilities  (secondary: Lifestyle)
 **Price:** Free
 **Age rating:** 4+  (no objectionable content)
