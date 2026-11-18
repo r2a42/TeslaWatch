@@ -1,21 +1,19 @@
-WatchKeyT turns an Apple Watch into a Bluetooth key for a compatible vehicle, for getting things in and out of it. It locks, unlocks and opens the trunk and frunk. It can't start or drive the vehicle.
+WatchKeyT turns an Apple Watch into a Bluetooth door key for a compatible vehicle. It locks, unlocks and opens the trunk and frunk, so the wearer can get things in and out. It can't start or drive the vehicle.
 
-Built for family watches with no iPhone. If your child wears an Apple Watch set up through Family Setup and doesn't have a phone, this app works entirely from the watch. There's no iPhone app to install, no account to create and no phone needed for setup.
+Works without an iPhone. The app runs entirely on the watch, so it suits a family member's Apple Watch that is managed from someone else's iPhone. There's no iPhone app to install, no account to create and no phone needed for setup.
 
 What it does
 - Lock and unlock your vehicle
 - Open the front and rear trunks
-- Show whether the vehicle is locked and whether a trunk is open
-- Hold keys for more than one vehicle and swipe between them
+- Show whether the vehicle is locked
 
 How setup works
-1. Open the app on the watch, give the key a name and enter your vehicle's VIN.
+1. Open the app on the watch and enter your vehicle's VIN.
 2. Sit in the vehicle and tap Pair.
-3. Tap your key card on the centre console and confirm on the vehicle's screen.
-4. Optional: to name the key on the vehicle, open Controls > Locks on its screen, send a command from the watch, then tap the edit button next to the key that moves to the top.
+3. Tap your key card on the center console and confirm on the vehicle's screen.
 
 Privacy
-The watch creates its own key inside the Secure Enclave. Nothing is sent to us. No accounts, no tracking, no servers. Your key can be removed from the vehicle at any time on its own screen.
+The watch creates its own key inside the Secure Enclave. Nothing is sent to us. No accounts, no tracking, no servers. You can remove the key from the vehicle at any time on the vehicle's own screen.
 
 Good to know
 - The app must be open on the watch to send a command. It is not a hands-free key and doesn't unlock automatically as you walk up.
