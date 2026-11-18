@@ -1,7 +1,9 @@
 # App Store listing: WatchKeyT
 
+Paste-ready text for App Store Connect is in store/paste/ (description.txt, review-notes.txt). Paste those, not this file: this file has notes that must not appear in the listing.
+
 **Name:** WatchKeyT  (30 chars max; no brand names; matches the App Store Connect name)
-**Subtitle:** Car key for your wrist  (30 chars max; no Apple product names, App Review flagged "Apple Watch" here under 5.2.5)
+**Subtitle:** Car Door Key - Can't Drive  (30 chars max; no Apple product names, App Review flagged "Apple Watch" here under 5.2.5)
 **Category:** Utilities  (secondary: Lifestyle)
 **Price:** Free
 **Age rating:** 4+  (no objectionable content)

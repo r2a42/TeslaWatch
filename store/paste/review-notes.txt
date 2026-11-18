@@ -1,0 +1,10 @@
+This is a watchOS app for Apple Watches managed through Family Setup (no paired iPhone). It is for retrieving items from a vehicle: lock, unlock, trunk and frunk only. It cannot start or drive the vehicle, and the code contains no command that could. The iOS target is only the required container for a watch-only app and has no functionality.
+
+The app talks to the user's own vehicle over Bluetooth LE using the manufacturer's published vehicle command protocol. It cannot be exercised without that vehicle.
+
+Demo video: [PASTE LINK HERE]
+The video shows the initial pairing with the vehicle and the full workflow (lock, unlock, trunk, frunk, status, settings) on a physical iPhone with the vehicle in the same shot. It is filmed with an iPhone test build of the same code as the watch app. The watch this app is made for is a Family Setup watch, which is not eligible for Developer Mode, so I cannot run a pre-release build on it, and I have no other Apple Watch.
+
+The app has no account system and no network calls, and it collects no data. Encryption is limited to standard algorithms from Apple's CryptoKit, so it declares ITSAppUsesNonExemptEncryption = NO.
+
+No demo account is needed (there is no sign-in).
